@@ -3,8 +3,8 @@ cache/**
 build/**
 .env*
 *.js
-tests/*.js
-services/*.js
-nft4Art.json
+./tests/*.js
+./services/*.js
 nft4Art.json
 nft4art.db
+package-lock.json

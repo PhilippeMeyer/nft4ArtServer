@@ -5,13 +5,12 @@ import { WebSocket, WebSocketServer } from "ws";
 import { BigNumber, constants, Contract, ContractFactory, errors, providers, utils, Wallet } from "ethers";
 import { TransactionReceipt, TransactionResponse } from "@ethersproject/abstract-provider";
 import fs from "fs";
-import winston from "winston";
-import expressWinston from "express-winston";
 import jwt from "jsonwebtoken";
 import Loki from "lokijs";
 import axios from "axios";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
+import expressWinston from "express-winston";
 // TODO: is it used?
 import "dotenv/config";
 import archiver from "archiver";
@@ -19,14 +18,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
 import { waitFor } from "./waitFor.js";
-import { logConf } from "./loggerConfiguration.js";
+import { logConf, logger } from "./loggerConfiguration.js";
 //import * as dbPoS from './services/db.js';
 import * as dbPos from './services/db.js';
+import { init } from "./init.js";
 
 // TODO: Env var?
 const webSite: string = "http://192.168.1.5:8999";
-const imgUrl: string = webSite + "/image?id=";
-const iconUrl: string = webSite + "/icon?id=";
 const jwtExpiry: number = 60 * 60;
 
 const NFT4ART_ETH_NETWORK = 1;
@@ -60,17 +58,16 @@ config.gvdNftAbiFile = process.env.APP_GVDNFT_ABI_FILE;
 config.urlIpfs = process.env.APP_IPFS_URL;
 config.dbName = process.env.APP_DB_NAME;
 config.creationScript = process.env.APP_DB_CREATION_SCRIPT;
+config.iconUrl = webSite + "/icon?id=";
+config.imgUrl = webSite + "/image?id=";
 
 
 export interface RequestCustom extends Request {
     deviceId?: string;
     manager?: string;
     address?: string;
+    appId?: string;
 }
-
-// Read the ABI of the GovernedNft contract
-let rawAbi = fs.readFileSync(config.gvdNftAbiFile);
-const gvdNftDef = JSON.parse(rawAbi.toString());
 
 // Global variables
 
@@ -83,14 +80,7 @@ var tokens: any;                            // Database collection of tokens
 var saleEvents: any;                        // Database collection of events (lock/unlock/transfer/completedTransfer)
 var appIds: Collection<AppLoginMessage>;    // Database collection of companion app Ids
 var wallet: Wallet;                         // Wallet
-let ethProvider: providers.JsonRpcProvider; // Connection provider to Ethereum
-let token: Contract;                        // Proxy to the Nft
-let metas: Object[] = [];                   // list of the Nfts loaded from the smart contract
-
-// TODO: example => const metasMap : Record<string, any> = {};
-let metasMap = new Map<String, any>();      // Same but as a map
-let icons = new Map();                      // Icons of the Nfts
-let images = new Map();                     // Images of the Nfts
+//let ethProvider: providers.JsonRpcProvider; // Connection provider to Ethereum
 var wait_on = 0;                            // pdf files synchronization
 
 const __filename = fileURLToPath(import.meta.url);
@@ -98,8 +88,6 @@ const __dirname = path.dirname(__filename);
 
 // Initialize and configure the logger (winston)
 
-const { format, transports } = logConf;
-const logger = winston.createLogger({ format, transports });
 
 // Database creation
 
@@ -183,9 +171,9 @@ cleanup(exitHandler);
 // When this signature is received, the server creates then a JWT which is used between the PoS and the server
 //
 
-init();
 
 const app = express();
+init(app, config);
 
 //initialize a simple http server
 const server = http.createServer(app);
@@ -284,6 +272,38 @@ const verifyTokenManager = (req: RequestCustom, res: Response, next: NextFunctio
 };
 
 //
+// verifyTokenApp
+// Helper function to verify a token coming from the mobile app.
+// This is called by the end points to verify if the JWT is valid
+//
+// When the token is expired, the app will reinitiate a login procedure
+//
+const verifyTokenApp = (req: RequestCustom, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+        logger.info("server.verifyToken.missingToken");
+        return res.status(401).json({
+            error: { message: "No token provided!", name: "NoTokenProvided" },
+        });
+    }
+    jwt.verify(token, config.secret, (err: any, decoded: any) => {
+        if (err) {
+            const status = err.name == "TokenExpiredError" ? 401 : 403;
+
+            return res.status(status).json({
+                error: err,
+            });
+        }
+
+        req.appId = decoded.appId;
+        req.address = decoded.address;
+        next();
+    });
+};
+
+//
 // /apiV1/auth/authorizePoS
 // Authorize or not a registered Point of Sale
 //
@@ -347,7 +367,7 @@ app.post("/apiV1/auth/signin", function (req: Request, res: Response) {
 
             Wallet.fromEncryptedJson(jsonWallet.toString(), pass)
                 .then(function (data) {
-                    loadWallet(data, pass);
+                    loadWallet(data, pass, app);
                     verification.authorized = true;
                     registerPoS({ ...device, ...verification }, pass, res);
                 })
@@ -396,14 +416,14 @@ app.post("/apiV1/auth/signin", function (req: Request, res: Response) {
     }
 });
 
-function loadWallet(w: Wallet, pass: string) {
-    wallet = w.connect(ethProvider);
+function loadWallet(w: Wallet, pass: string, app: any) {
+    wallet = w.connect(app.locals.ethProvider);
     logger.info("server.signin.loadedWallet");
     passHash = utils.keccak256(utils.toUtf8Bytes(pass));
     //console.log(w.mnemonic);
 
-    metas.forEach(async (nft: any) => {
-        let balance = await token.balanceOf(wallet.address, nft.tokenId);
+    app.locals.metas.forEach(async (nft: any) => {
+        let balance = await app.locals.token.balanceOf(wallet.address, nft.tokenId);
         nft.availableTokens = balance.toString();
         if (balance.isZero()) nft.isLocked = true;
     });
@@ -527,7 +547,7 @@ app.post("/apiV1/auth/appLogin", async function (req: Request, res: Response) {
 // Drop a registration for a companion app
 //
 // The companion app logs into the system via 
-app.post("/apiV1/auth/appLoginDrop", verifyToken, async function (req: RequestCustom, res: Response) {
+app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, async function (req: RequestCustom, res: Response) {
     if (req.deviceId === undefined) return res.status(403).json({error: 'no appId provided in the token'});
     if (req.address === undefined) return res.status(403).json({error: 'no address provided in the token'});
     logger.info('server.appLoginDrop %s', req.deviceId);
@@ -546,10 +566,20 @@ app.post("/apiV1/auth/appLoginDrop", verifyToken, async function (req: RequestCu
 // - address: the owner's address
 //
 // This function checks the Ethereum logs to find out whether the address is owning a token or not.
-// TODO: to ensure a decent response time for the application login, this information will be cached on the server. 
+async function isAddressOwningToken(address: string) {
+    let ret = await tokensOwnedByAddress(address || "", app.locals.token);
+    return ret.length != 0;
+}
+
+//
+// tokensOwnedByAddress(address: string, token: Contract)
+//
+// This function builds the balance on each token for a given address from the smart contract
+//
+// TODO: to ensure a decent response time for the application login, this information will be cached on the server.
 // It should be loaded when the server initializes and will be updated with the Ethereum notifications
 //
-async function isAddressOwningToken(address: string) {
+async function tokensOwnedByAddress(address: string, token: Contract): Promise<{ tokenId: BigNumber; balance: BigNumber }[]> {
     //address = '0x9DF6A10E3AAfd916A2E88E193acD57ff451C445A';
     const transfersSingle = await token.queryFilter( token.filters.TransferSingle(null, null, address), 0, "latest");
     const transfersBatch = await token.queryFilter( token.filters.TransferBatch(null, null, address), 0, "latest");
@@ -567,15 +597,16 @@ async function isAddressOwningToken(address: string) {
         idsToInsert.forEach(() => addresses.push(address));
     });
 
-    if(ids.length == 0) return false;
+    let ret: { tokenId: BigNumber; balance: BigNumber }[] = [];
+
+    if(ids.length == 0) return ret;
 
     const balances = await token.balanceOfBatch(addresses, ids);
-    let owner: boolean = false;
-    balances.forEach((bal: BigNumber) => {
-        if(bal.gt(constants.Zero)) owner = true;
+    balances.forEach((bal: BigNumber, index: number) => {
+        if(bal.gt(constants.Zero)) ret.push({tokenId: ids[index], balance: bal});
     });
-    
-    return owner;
+
+    return ret;
 }
 
 //
@@ -597,13 +628,13 @@ function isSignatureValid(login: AppLogin) {
 }
 
 app.get("/tokens", verifyToken, (req: Request, res: Response) => {
-    res.status(200).json(metas);
+    res.status(200).json(app.locals.metas);
 });
 
 app.get("/token", verifyToken, (req: Request, res: Response) => {
     console.log(req.query.id);
     const id = parseInt(req.query.id as string);
-    res.status(200).json(metas[id]);
+    res.status(200).json(app.locals.metas[id]);
 });
 
 app.get("/map", function (req: Request, res: Response) {
@@ -612,12 +643,12 @@ app.get("/map", function (req: Request, res: Response) {
 
 app.get("/icon", function (req: Request, res: Response) {
     res.type("png");
-    res.status(200).send(icons.get(req.query.id));
+    res.status(200).send(app.locals.icons.get(req.query.id));
 });
 
 app.get("/image", function (req: Request, res: Response) {
     res.type("jpeg");
-    res.status(200).send(images.get(req.query.id));
+    res.status(200).send(app.locals.images.get(req.query.id));
 });
 
 app.get("/QRCode", function (req: Request, res: Response) {
@@ -626,7 +657,7 @@ app.get("/QRCode", function (req: Request, res: Response) {
 });
 
 
-app.get('/apiV1/information/video', function(req: Request, res: Response) {
+app.get('/apiV1/information/video', verifyTokenApp, function(req: Request, res: Response) {
     logger.info('server.playVideo %s', req.query.address);
 
     //TODO select the video to be played from the customer's address
@@ -641,6 +672,29 @@ app.get('/apiV1/information/video', function(req: Request, res: Response) {
     res.writeHead(200, head)
     fs.createReadStream(filePath).pipe(res)
   })
+
+//
+// /apiV1/information/tokensOwned
+// List the tokens owned by a customer
+//
+// Returns the tokens owned by a customer based on his address contained in the JWT
+//
+app.get('/apiV1/information/tokensOwned', verifyTokenApp, async function(req: RequestCustom, res: Response) {
+    logger.info('server.tokensOwned %s', req.address);
+
+    const tokens = await tokensOwnedByAddress(req.address || "", app.locals.token);
+    res.status(200).json({address: app.locals.token.address, tokens: tokens});
+});
+
+app.get('/apiV1/information/3Dmodel', verifyTokenApp, function(req: RequestCustom, res: Response) {
+    logger.info('server.tokensOwned %s', req.address);
+
+    const filePath = path.join(__dirname, "public/sample-mp4-file.mp4");
+    const buff = fs.readFileSync(filePath);
+    const buffB64 = buff.toString('base64');
+
+    res.status(200).json({type: 'stl', data: buffB64});
+});
 
 //
 // /apiV1/priceInCrypto
@@ -847,7 +901,7 @@ app.post('/apiV1/sale/createToken', verifyToken, async function(req :RequestCust
           return;
       }
   
-    let factory = new ContractFactory(gvdNftDef.abi, gvdNftDef.data.bytecode.object, wallet);
+    let factory = new ContractFactory(app.locals.gvdNftDef.abi, app.locals.gvdNftDef.data.bytecode.object, wallet);
     let contract = await factory.deploy(req.query.uri);
     await contract.deployed();
     res.status(200).json({contractAddress: contract.address});
@@ -875,10 +929,10 @@ app.post("/apiV1/sale/transfer", verifyToken, async function (req: RequestCustom
     };
     saleEvents.insert(saleEvent);
 
-    let tokenWithSigner = token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(wallet);
     console.log(tokenWithSigner);
     console.log("token");
-    console.log(token);
+    console.log(app.locals.token);
     console.log("wallet");
     console.log(wallet);
     tokenWithSigner
@@ -913,8 +967,8 @@ app.post("/apiV1/sale/transfer", verifyToken, async function (req: RequestCustom
                     transactionReceipt.transactionHash,
                 );
                 // Update the balance once the transfer has been performed
-                token.balanceOf(wallet.address, tokenId).then((balance: any) => {
-                    const tk = metasMap.get(tokenAddr + tokenId);
+                app.locals.token.balanceOf(wallet.address, tokenId).then((balance: any) => {
+                    const tk = app.locals.metasMap.get(tokenAddr + tokenId);
                     if (tk != null) {
                         tk.availableTokens = balance.toString();
                         if (balance.isZero()) {
@@ -994,7 +1048,7 @@ app.post("/apiV1/sale/transferEth", verifyToken, async function (req: RequestCus
         status: NFT4ART_SALE_INITIATED
     };
 
-    let tokenWithSigner = token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(wallet);
     tokenWithSigner
         .saleRecord(tokenId, saleRecord)
         .then((transferResult: TransactionResponse) => {
@@ -1059,7 +1113,7 @@ app.post("/apiV1/token/mintIpfsFolder", verifyTokenManager, async function (req:
     let resp = await axios.get(urlIpfs);
 
     var ids = resp.data.Objects[0].Links.map( (item: any) =>  path.parse(item.Name).name );
-    var existingIds = ids.filter((item: any) => metasMap.get(config.addressToken + item) !== undefined )
+    var existingIds = ids.filter((item: any) => app.locals.metasMap.get(config.addressToken + item) !== undefined )
     if (existingIds.length !=0 ) return res.status(400).json({error: {name: 'alreadyExistingToken', message: 'The contract already contains tokens Ids requested to mint'}});
     var bigIntIds = ids.map((item: any) => {
         try { return BigNumber.from(item);  }
@@ -1068,7 +1122,7 @@ app.post("/apiV1/token/mintIpfsFolder", verifyTokenManager, async function (req:
     if (bigIntIds.findIndex(Object.is.bind(null, undefined)) != -1) return res.status(400).json({error: {name: 'invalidId', message: 'One of the Ids to mint is invalid'}});
     
     var amounts = resp.data.Objects[0].Links.map( (item: any) => item.amount === undefined ? constants.One : BigNumber.from(item.amount));
-    let tokenWithSigner = token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(wallet);
     try {
         var tx = await tokenWithSigner.mintBatch(bigIntIds, amounts, [] );
         await tx.wait();
@@ -1250,7 +1304,7 @@ setInterval(() => {
 
 app.put("/lockUnlock", async (req: Request, res: Response) => {
     let id: string = req.query.id as string;
-    let token: any = metasMap.get(id);
+    let token: any = app.locals.metasMap.get(id);
     let lock: any = req.query.lock;
 
     if (typeof token === null) {
@@ -1268,202 +1322,4 @@ app.put("/lockUnlock", async (req: Request, res: Response) => {
     res.status(204).send();
 });
 
-function receivedEthCallback(from: any, amount: BigInteger, event: any) {
-/*
-  from: 0x9DF6A10E3AAfd916A2E88E193acD57ff451C445A 
-  amount: BigNumber { _hex: '0x016345785d8a0000', _isBigNumber: true } 
-  event: {
-  blockNumber: 11050043,
-  blockHash: '0x070d1213a4c692e11a1cbf66464112bd8e5063ea98178bae3da48a1e869cda23',
-  transactionIndex: 16,
-  removed: false,
-  address: '0xf0962Ff23517E8C4F20E402c8132d433C946DF11',
-  data: '0x0000000000000000000000009df6a10e3aafd916a2e88e193acd57ff451c445a000000000000000000000000000000000000000000000000016345785d8a0000',
-  topics: [
-    '0x52a6cdf67c40ce333b3d846e4e143db87f71dd7935612a4cafcf6ba76047ca1f'
-  ],
-  transactionHash: '0xf2d56b067d289a29b59687d0baaa7da2cb2290e630ab613870f9d07e1d88e9d5',
-  logIndex: 33,
-  removeListener: [Function (anonymous)],
-  getBlock: [Function (anonymous)],
-  getTransaction: [Function (anonymous)],
-  getTransactionReceipt: [Function (anonymous)],
-  event: 'ReceivedEth',
-  eventSignature: 'ReceivedEth(address,uint256)',
-  decode: [Function (anonymous)],
-  args: [
-    '0x9DF6A10E3AAfd916A2E88E193acD57ff451C445A',
-    BigNumber { _hex: '0x016345785d8a0000', _isBigNumber: true }
-  ]
-}
-*/
-    console.log('from:', from, 'amount:', amount, 'event:', event);
-}
 
-//
-// Server initialization
-//
-// This function retrieves the tokens' information on Ethereum via Infura and caches the images in alocal directory
-// If the images have not been cached, it rerieves those from Ipfs
-//
-// This function fills:
-// 	- the meta global variable with the tokens' data
-//	- the icons map (global variable) with the icons
-//	- the image map (global variable) with the images
-//
-async function init() {
-    // Connect to Infura and connect to the token
-    ethProvider = await new providers.InfuraProvider(config.network, config.infuraKey);
-    token = await new Contract(config.addressToken, gvdNftDef.abi, ethProvider);
-    var receivedEth = token.filters.ReceivedEth();
-    token.on(receivedEth, receivedEthCallback)
-    logger.info("server.init %s", token.address);
-
-    if (!fs.existsSync(config.cacheFolder)) fs.mkdirSync(config.cacheFolder);
-
-    const QRaddr: string = path.join(config.cacheFolder, config.addressToken + '.png');
-    if(!fs.existsSync(QRaddr)) await QRCode.toFile(QRaddr, config.addressToken);
-    
-    let i: number = 0;
-    let str: string, strToken: string;
-    let data: any;
-    let loop: boolean = true;
-    let errTimeout: number = 0;
-
-    // Retrieve the past events on this contract to find out which id have been minted
-    // Mints are coming from address '0x0000000000000000000000000000000000000000' and can be performed by any operator (first topic)
-    const events = await token.queryFilter(
-        token.filters.TransferSingle(null, "0x0000000000000000000000000000000000000000"),
-        0,
-        "latest",
-    );
-    console.log(events);
-    const eventsB = await token.queryFilter(
-        token.filters.TransferBatch(null, "0x0000000000000000000000000000000000000000"),
-        0,
-        "latest",
-    );
-    console.log(eventsB[0]?.args?.ids);
-
-    var ids: any[] = [];
-    events.forEach((evt) => ids.push(evt?.args?.id));
-    eventsB.forEach((evt) => ids.push(...evt?.args?.ids));
-    console.log(ids);
-
-    for (i = 0; i < ids.length; i++) {
-        const id = ids[i];
-        strToken = await token.uri(id);
-        str = strToken.replace('ipfs:', 'https:').replace('/{id}', '.ipfs.dweb.link/' + id);
-
-        if (errTimeout == 2) break; // If we face a timeout we retry twice
-
-        try {
-            //data = tokens.findOne({ id: config.addressToken + id }); // Store information in the database if not existing
-            var dataFromDb = dbPos.findToken(config.addressToken + id );
-            if (dataFromDb == null) {
-                logger.info("server.init.loadTokens.fromIpfs %s", str);
-                let resp = await axios.get(str); // The data is not in cache, we retrieve the JSON from Ipfs
-                data = resp.data;
-                data.id = config.addressToken + id;
-                data.tokenIdStr = id?.toString();
-                data.tokenId = id;
-                data.addr = config.addressToken;
-                data.isLocked = false;
-                data.price = 0;
-                //tokens.insert(data);
-                dbPos.insertNewToken(data);
-            } else {
-                data = JSON.parse(dataFromDb.jsonData);
-                logger.info("server.init.loadTokens.fromCache %s", str);
-            }
-        } catch (error) {
-            const err = error as any;
-            if (typeof err.response != "undefined") {
-                // We have received a proper response but containing an error
-                logger.warn("server.init.loadTokens %s", str, err.response.status);
-                if (err.response.status == 504) {
-                    errTimeout++;
-                    continue;
-                } // 504 = Gateway timeout
-                if (err.response.status == 408) {
-                    errTimeout++;
-                    continue;
-                } // 408 = Request timeout
-                if (err.response.status == 404) break; // 404 = not found, we stop as the information is not available
-            } else logger.error("server.init.loadTokens %s", err); // We log here network errors
-        }
-
-        metas.push(data);
-        metasMap.set(data.id, data);
-
-        errTimeout = 0;
-    }
-
-    // TODO: store incrementally the transfers in the database so that the loading time does not increase over time
-    // This can be performed storing the last block id retrieved and re querying from there
-    //const transfersSingle = await token.queryFilter( token.filters.TransferSingle(null, null), 0, "latest");
-    //const transfersBatch = await token.queryFilter( token.filters.TransferBatch(null, null), 0, "latest");
-
-    //console.log('Single transfers', transfersSingle);
-    //console.log('Batch transfers', transfersBatch);
-
-    //
-    // Retrieve the icons, looking at the cache in case the icon has been already retrieved
-    //
-    let buf: Buffer;
-
-    const getIcons = Promise.all(
-        metas.map(async (meta: any) => {
-            let cid = config.cacheFolder + meta.image.replace("ipfs://", ""); // We remove the ipfs prefix to only keep the cid
-            let icon = meta.image.replace("ipfs", "https").concat(".ipfs.dweb.link"); // We form an url for dweb containing the ipfs cid
-            try {
-                if (fs.existsSync(cid)) {
-                    // We try to find this cid in the cache
-                    logger.info("server.init.loadIcons.cache %s", cid);
-                    buf = Buffer.from(fs.readFileSync(cid, { encoding: "binary" }), "binary");
-                } else {
-                    // Not available in the cache, we get it from ipfs
-                    logger.info("server.init.loadIcons.ipfs %s", cid);
-                    const resp = await axios.get(icon, { responseType: "arraybuffer" });
-                    buf = Buffer.from(resp.data, "binary");
-                    fs.writeFileSync(cid, buf, { flag: "w", encoding: "binary" }); // Save the file in cache
-                }
-
-                icons.set(meta.id, buf); // Store the icon in memory
-            } catch (error) {
-                logger.error("server.init.loadIcons %s", error);
-            }
-
-            meta.iconUrl = iconUrl + meta.id; // Reference the icon's url
-        }),
-    );
-
-    //
-    // Retrieve the images, looking at the cache in case the image has been already retrieved
-    //
-    const getImages = Promise.all(
-        metas.map(async (meta: any) => {
-            let cid = config.cacheFolder + meta.image_raw.replace("ipfs://", "");
-            try {
-                if (fs.existsSync(cid)) {
-                    logger.info("server.init.loadImages.cache %s", cid);
-                    buf = Buffer.from(fs.readFileSync(cid, { encoding: "binary" }), "binary");
-                } else {
-                    logger.info("server.init.loadImages.ipfs %s", cid);
-                    let image = meta.image_raw.replace("ipfs", "https").concat(".ipfs.dweb.link");
-                    const resp = await axios.get(image, { responseType: "arraybuffer" });
-                    buf = Buffer.from(resp.data, "binary");
-                    fs.writeFileSync(cid, buf, { flag: "w", encoding: "binary" });
-                }
-
-                images.set(meta.id, buf);
-            } catch (error) {
-                logger.error("server.init.loadIcons %s", error);
-            }
-
-            meta.imgUrl = imgUrl + meta.id;
-        }),
-    );
-
-    await Promise.all([getIcons, getImages]);
-}
