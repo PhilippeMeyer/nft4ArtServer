@@ -16,16 +16,17 @@ import { config } from "../../config.js"
 //
 
 function threeDmodel(req: RequestCustom, res: Response) {
-    logger.info('server.threeDmodel %s', req.address);
-/*
-    const filePath = path.join(__dirname, "public/sample-mp4-file.mp4");
-    const buff = fs.readFileSync(filePath);
-    const buffB64 = buff.toString('base64');
+    if (req.query.tokenId === 'undefined') {
+      logger.warn('server.threeDmodel.missingTokenId %s', req.address);
+      res.sendStatus(400);
+      return;
+    }
+  
+    logger.info('server.threeDmodel %s, tokenID %s', req.address, req.query.tokenId);
 
-    res.status(200).json({type: 'stl', data: buffB64});
-*/
-  res.type("model/gltf-binary");
-  res.status(200).sendFile(path.join(config.__dirname, "public/sphere.glb"));
+    // TODO Manage the tokenId to retreive the associated model. For now, always sending the same
+    let data: Buffer = fs.readFileSync(path.join(config.__dirname, "public/sphere.glb"));
+    res.render("3dmodel", {model: "data:model/gltf-binary;base64," + data.toString('base64')});
 }
 
 export { threeDmodel };
