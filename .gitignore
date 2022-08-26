@@ -1,7 +1,7 @@
 node_modules/**
 cache/**
 build/**
-.env*
+./.env*
 *.js
 ./tests/*.js
 ./services/*.js
