@@ -18,6 +18,7 @@ import axios from "axios";
 // 	- the meta global variable with the tokens' data
 //	- the icons map (global variable) with the icons
 //	- the image map (global variable) with the images
+//
 // Those global variables are stored in the locals property of the app object
 //
 //  app.locals.gvdNftDef:       Contract Abi of the GovernedNft

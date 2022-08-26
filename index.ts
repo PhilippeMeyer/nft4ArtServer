@@ -8,20 +8,23 @@ import fs from "fs";
 import jwt from "jsonwebtoken";
 import Loki from "lokijs";
 import axios from "axios";
-import PDFDocument from "pdfkit";
-import QRCode from "qrcode";
 import expressWinston from "express-winston";
 // TODO: is it used?
 import "dotenv/config";
-import archiver from "archiver";
 import path from "path";
 import { fileURLToPath } from "url";
-import os from "os";
 import { waitFor } from "./waitFor.js";
 import { logConf, logger } from "./loggerConfiguration.js";
-//import * as dbPoS from './services/db.js';
-import * as dbPos from './services/db.js';
+
 import { init } from "./init.js";
+import { app } from "./app.js";
+import { RequestCustom } from "./requestCustom.js"
+
+import * as dbPos from './services/db.js';
+
+import { generateWallets } from "./endPoints/information/generateWallets.js";
+import { tokensOwned,  tokensOwnedByAddress } from "./endPoints/information/tokensOwned.js";
+import { threeDmodel } from "./endPoints/information/threeDmodel.js"; 
 
 // TODO: Env var?
 const webSite: string = "http://192.168.1.5:8999";
@@ -62,12 +65,6 @@ config.iconUrl = webSite + "/icon?id=";
 config.imgUrl = webSite + "/image?id=";
 
 
-export interface RequestCustom extends Request {
-    deviceId?: string;
-    manager?: string;
-    address?: string;
-    appId?: string;
-}
 
 // Global variables
 
@@ -81,7 +78,6 @@ var saleEvents: any;                        // Database collection of events (lo
 var appIds: Collection<AppLoginMessage>;    // Database collection of companion app Ids
 var wallet: Wallet;                         // Wallet
 //let ethProvider: providers.JsonRpcProvider; // Connection provider to Ethereum
-var wait_on = 0;                            // pdf files synchronization
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,7 +168,6 @@ cleanup(exitHandler);
 //
 
 
-const app = express();
 init(app, config);
 
 //initialize a simple http server
@@ -571,43 +566,6 @@ async function isAddressOwningToken(address: string) {
     return ret.length != 0;
 }
 
-//
-// tokensOwnedByAddress(address: string, token: Contract)
-//
-// This function builds the balance on each token for a given address from the smart contract
-//
-// TODO: to ensure a decent response time for the application login, this information will be cached on the server.
-// It should be loaded when the server initializes and will be updated with the Ethereum notifications
-//
-async function tokensOwnedByAddress(address: string, token: Contract): Promise<{ tokenId: BigNumber; balance: BigNumber }[]> {
-    //address = '0x9DF6A10E3AAfd916A2E88E193acD57ff451C445A';
-    const transfersSingle = await token.queryFilter( token.filters.TransferSingle(null, null, address), 0, "latest");
-    const transfersBatch = await token.queryFilter( token.filters.TransferBatch(null, null, address), 0, "latest");
-
-    let ids: BigNumber[] = [];
-    let addresses: string[] = [];
-
-    transfersSingle.forEach((evt) => {
-        ids.push(evt.args?.id);
-        addresses.push(address);
-    });
-    transfersBatch.forEach((evt) => {
-        const idsToInsert = evt.args?.ids;
-        ids.push(...idsToInsert);
-        idsToInsert.forEach(() => addresses.push(address));
-    });
-
-    let ret: { tokenId: BigNumber; balance: BigNumber }[] = [];
-
-    if(ids.length == 0) return ret;
-
-    const balances = await token.balanceOfBatch(addresses, ids);
-    balances.forEach((bal: BigNumber, index: number) => {
-        if(bal.gt(constants.Zero)) ret.push({tokenId: ids[index], balance: bal});
-    });
-
-    return ret;
-}
 
 //
 // isSignatureValid
@@ -673,28 +631,9 @@ app.get('/apiV1/information/video', verifyTokenApp, function(req: Request, res: 
     fs.createReadStream(filePath).pipe(res)
   })
 
-//
-// /apiV1/information/tokensOwned
-// List the tokens owned by a customer
-//
-// Returns the tokens owned by a customer based on his address contained in the JWT
-//
-app.get('/apiV1/information/tokensOwned', verifyTokenApp, async function(req: RequestCustom, res: Response) {
-    logger.info('server.tokensOwned %s', req.address);
+app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
 
-    const tokens = await tokensOwnedByAddress(req.address || "", app.locals.token);
-    res.status(200).json({address: app.locals.token.address, tokens: tokens});
-});
-
-app.get('/apiV1/information/3Dmodel', verifyTokenApp, function(req: RequestCustom, res: Response) {
-    logger.info('server.tokensOwned %s', req.address);
-
-    const filePath = path.join(__dirname, "public/sample-mp4-file.mp4");
-    const buff = fs.readFileSync(filePath);
-    const buffB64 = buff.toString('base64');
-
-    res.status(200).json({type: 'stl', data: buffB64});
-});
+app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
 
 //
 // /apiV1/priceInCrypto
@@ -1130,93 +1069,7 @@ app.post("/apiV1/token/mintIpfsFolder", verifyTokenManager, async function (req:
     } catch(e) { res.status(400).json({error: {name: 'errorMintingTokens', message: 'Error minting the tokens'}}); }
 });
 
-app.get("/apiV1/generateWallets", verifyTokenManager, async function (req: Request, res: Response) {
-    let nbWallets = 10;
-    if (req.query.nbWallets !== undefined) nbWallets = parseInt(req.query.nbWallets as string);
-
-    var env = new PDFDocument({
-        size: [649.134, 323.15],
-        autoFirstPage: false,
-        margins: { top: 10, bottom: 10, right: 50, left: 50 },
-    });
-    var doc = new PDFDocument({ size: "A4", autoFirstPage: false });
-    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nft4Art"));
-    const envFile = fs.createWriteStream(path.join(tmpDir, "enveloppes.pdf"));
-    const docFile = fs.createWriteStream(path.join(tmpDir, "wallets.pdf"));
-    envFile.on("finish", () => {
-        fileWritten();
-    });
-    docFile.on("finish", () => {
-        fileWritten();
-    });
-    env.pipe(envFile);
-    doc.pipe(docFile);
-
-    for (var i = 0; i < nbWallets; i++) {
-        let w = Wallet.createRandom();
-
-        let res = await QRCode.toFile(path.join(tmpDir, "addr" + i + ".png"), w.address);
-        env.font("Helvetica").fontSize(10);
-        env.addPage();
-        env.image("./public/nft4Art.png", 20, 20, { width: 120 });
-        env.image(path.join(tmpDir, "addr" + i + ".png"), 400, 30, {
-            width: 200,
-        });
-        env.fontSize(10).text("Ethereum address:", 0, 240, { align: "right" });
-        env.font("Courier").fontSize(10).text(w.address, { align: "right" });
-
-        doc.addPage();
-        doc.image("./public/nft4Art.png", 20, 20, { width: 150 });
-        doc.moveDown(8);
-        doc.font("Helvetica-Bold").fontSize(25).text("Your personnal Ethereum Wallet", { align: "center" });
-        doc.moveDown(3);
-        doc.font("Times-Roman").fontSize(12);
-        doc.text(
-            "You'll find below the mnemonic words that you will insert in any Ethereum compatible wallet. This list of words represents the secret which enables you to access your newly purchased piece of art. Do not communicate this information to anybody!",
-        );
-        doc.moveDown(2);
-        doc.font("Times-Bold").fontSize(12).text(w.mnemonic.phrase, { align: "center" });
-        doc.moveDown(2);
-        doc.fontSize(12).text("The Ethereum address of this wallet is: ", { continued: true });
-        doc.font("Courier").fontSize(12).text(w.address);
-        let qr = await QRCode.toFile(path.join(tmpDir, "phrase" + i + ".png"), w.mnemonic.phrase);
-        doc.moveDown(2);
-        doc.font("Times-Roman").fontSize(12).text("In the Nft4ART app you'll be invited to scan your secret phrase:");
-        doc.moveDown(2);
-        doc.image(path.join(tmpDir, "phrase" + i + ".png"), 200, 500, {
-            width: 200,
-        });
-    }
-    doc.end();
-    env.end();
-
-    //
-    // fileWritten
-    //
-    // This is a callback on the write streams closing for the streams used by pdfkit.
-    // This function is called when each stream is closing. A global variable ensures that the zip archive is produced only when the 2 files have been closed.
-    //
-    function fileWritten() {
-        wait_on++;
-        if (wait_on % 2 != 0) return;
-
-        const archive = archiver("zip");
-        archive.pipe(res);
-        archive.on("error", function (err) {
-            res.status(500).send({ error: err.message });
-        });
-        res.attachment("paperWallets.zip").type("zip");
-        archive.on("finish", () => {
-            res.status(200).end();
-            fs.rmSync(tmpDir, { recursive: true });
-        });
-        archive.file(path.join(tmpDir, "enveloppes.pdf"), {
-            name: "enveloppes.pdf",
-        });
-        archive.file(path.join(tmpDir, "wallets.pdf"), { name: "wallets.pdf" });
-        archive.finalize();
-    }
-});
+app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
 
 interface ExtWebSocket extends WebSocket {
     isAlive: boolean;
