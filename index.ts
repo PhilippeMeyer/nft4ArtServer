@@ -217,9 +217,6 @@ app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
 app.get('/apiV1/information/3Dmodel', threeDmodel);
 app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
 
-app.get("/3DView", (req: Request, res: Response) => {
-    res.render("3dmodel");
-});
 
 app.get("/tokens", verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
