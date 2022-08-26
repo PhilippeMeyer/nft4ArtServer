@@ -11,9 +11,6 @@
     
 
 <!-- Use it like any other HTML element -->
-<model-viewer style = "width:1080px;height:1080px;" id = "glb" crossorigin="anonymous" camera-controls ></model-viewer>
-<script>
-    document.getElementById('glb').src= "apiV1/information/3Dmodel"
-</script>
+<model-viewer style = "width:1080px;height:1080px;" id = "glb" crossorigin="anonymous" camera-controls src='<%- model %>'></model-viewer>
 </body>
 </html>
