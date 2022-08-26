@@ -1,11 +1,10 @@
-import express, { NextFunction, Request, Response } from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import http from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { BigNumber, constants, Contract, ContractFactory, errors, providers, utils, Wallet } from "ethers";
 import { TransactionReceipt, TransactionResponse } from "@ethersproject/abstract-provider";
 import fs from "fs";
-import jwt from "jsonwebtoken";
 import Loki from "lokijs";
 import axios from "axios";
 import expressWinston from "express-winston";
@@ -14,21 +13,28 @@ import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import { waitFor } from "./waitFor.js";
-import { logConf, logger } from "./loggerConfiguration.js";
 
 import { init } from "./init.js";
 import { app } from "./app.js";
 import { RequestCustom } from "./requestCustom.js"
+import { logConf, logger } from "./loggerConfiguration.js";
 
 import * as dbPos from './services/db.js';
+import { config } from "./config.js";
 
 import { generateWallets } from "./endPoints/information/generateWallets.js";
-import { tokensOwned,  tokensOwnedByAddress } from "./endPoints/information/tokensOwned.js";
+import { tokensOwned } from "./endPoints/information/tokensOwned.js";
 import { threeDmodel } from "./endPoints/information/threeDmodel.js"; 
+import { video } from "./endPoints/information/video.js"; 
+import { signin } from "./endPoints/auth/signin.js";
+import { verifyTokenApp } from "./endPoints/auth/verifyTokenApp.js";
+import { verifyToken } from "./endPoints/auth/verifyToken.js";
+import { verifyTokenManager } from "./endPoints/auth/verifyTokenManager.js";
+import { appLogin, appLoginDrop } from "./endPoints/auth/appLogin.js";
+
 
 // TODO: Env var?
 const webSite: string = "http://192.168.1.5:8999";
-const jwtExpiry: number = 60 * 60;
 
 const NFT4ART_ETH_NETWORK = 1;
 const NFT4ART_BTC_NETWORK = 2;
@@ -46,37 +52,17 @@ const TOKEN_COLLECTION_NAME = "tokens";
 const SALES_EVENTS_COLLECTION_NAME = "saleEvents";
 const APP_ID_COLLECTION_NAME = "appIds";
 
-var config: any = {};
-config.secret = process.env.APP_SECRET;
-config.walletFileName = process.env.APP_WALLET_FILE;
-config.database = process.env.APP_DB_FILE;
-config.infuraKey = process.env.APP_INFURA_KEY;
-config.network = process.env.APP_NETWORK;
-config.addressToken = process.env.APP_TOKEN_ADDR;
-config.cacheFolder = process.env.APP_CACHE_FOLDER;
-config.priceFeedETH = process.env.APP_PRICE_FEED_ETH;
-config.priceFeedBTC = process.env.APP_PRICE_FEED_BTC;
-config.priceFeedCHF = process.env.APP_PRICE_FEED_CHF;
-config.gvdNftAbiFile = process.env.APP_GVDNFT_ABI_FILE;
-config.urlIpfs = process.env.APP_IPFS_URL;
-config.dbName = process.env.APP_DB_NAME;
-config.creationScript = process.env.APP_DB_CREATION_SCRIPT;
-config.iconUrl = webSite + "/icon?id=";
-config.imgUrl = webSite + "/image?id=";
-
-
 
 // Global variables
 
-let passHash: string = "";                  // Hash of the password. If empty, means that the wallet has not been loaded
 var databaseInitialized = false;            // Is the database initialized? Used to wait for the database init before starting the server
 
 //TODO: have a look if it is possible to type the loki collection
 var registeredPoS: any;                     // Database collection of registered point of sale
 var tokens: any;                            // Database collection of tokens
 var saleEvents: any;                        // Database collection of events (lock/unlock/transfer/completedTransfer)
-var appIds: Collection<AppLoginMessage>;    // Database collection of companion app Ids
-var wallet: Wallet;                         // Wallet
+//var appIds: Collection<AppLoginMessage>;    // Database collection of companion app Ids
+//var wallet: Wallet;                         // Wallet
 //let ethProvider: providers.JsonRpcProvider; // Connection provider to Ethereum
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,7 +91,7 @@ function loadHandler() {
     registeredPoS = db.getCollection(PoS_COLLECTION_NAME) ?? db.addCollection(PoS_COLLECTION_NAME);
     tokens = db.getCollection(TOKEN_COLLECTION_NAME) ?? db.addCollection(TOKEN_COLLECTION_NAME);
     saleEvents = db.getCollection(SALES_EVENTS_COLLECTION_NAME) ?? db.addCollection(SALES_EVENTS_COLLECTION_NAME);
-    appIds = db.getCollection(APP_ID_COLLECTION_NAME) ?? db.addCollection(APP_ID_COLLECTION_NAME);
+    //appIds = db.getCollection(APP_ID_COLLECTION_NAME) ?? db.addCollection(APP_ID_COLLECTION_NAME);
     databaseInitialized = true;
 }
 
@@ -196,107 +182,9 @@ app.get('/*', function (req :Request, res :Response) {
 	res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 */
-//
-// verifyToken
-// Helper function to verify a token. This is called by the end points to verify if the JWT is valid
-//
-// When the token is expired, the PoS will reinitiate a login procedure which is simply performed through
-// a biometric check
-//
-const verifyToken = (req: RequestCustom, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(" ")[1];
 
-    if (!token) {
-        logger.info("server.verifyToken.missingToken");
-        return res.status(401).json({
-            error: { message: "No token provided!", name: "NoTokenProvided" },
-        });
-    }
-    jwt.verify(token, config.secret, (err: any, decoded: any) => {
-        if (err) {
-            const status = err.name == "TokenExpiredError" ? 401 : 403;
 
-            return res.status(status).json({
-                error: err,
-            });
-        }
 
-        req.deviceId = decoded.id;
-        req.manager = decoded.manager;
-        req.address = decoded.address;
-        next();
-    });
-};
-
-//
-// verifyTokenManager
-// Helper function to verify if a token belongs to a manager This is called by the end points to verify if the JWT is valid and owned by a manager
-//
-// When the token is expired, the PoS will reinitiate a login procedure which is simply performed through
-// a biometric check
-//
-const verifyTokenManager = (req: RequestCustom, res: Response, next: NextFunction) => {
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
-
-    if (!token) {
-        logger.info("server.verifyToken.missingToken");
-        return res.status(401).json({
-            error: { message: "No token provided!", name: "NoTokenProvided" },
-        });
-    }
-    jwt.verify(token, config.secret, (err: any, decoded: any) => {
-        if (err) {
-            const status = err.name == "TokenExpiredError" ? 401 : 403;
-
-            return res.status(status).json({
-                error: err,
-            });
-        }
-
-        req.deviceId = decoded.id;
-        req.manager = decoded.manager;
-        if (!req.manager)
-            return res.status(403).json({
-                error: { message: "Not authorized !", name: "NotAuthorized" },
-            });
-
-        next();
-    });
-};
-
-//
-// verifyTokenApp
-// Helper function to verify a token coming from the mobile app.
-// This is called by the end points to verify if the JWT is valid
-//
-// When the token is expired, the app will reinitiate a login procedure
-//
-const verifyTokenApp = (req: RequestCustom, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(" ")[1];
-
-    if (!token) {
-        logger.info("server.verifyToken.missingToken");
-        return res.status(401).json({
-            error: { message: "No token provided!", name: "NoTokenProvided" },
-        });
-    }
-    jwt.verify(token, config.secret, (err: any, decoded: any) => {
-        if (err) {
-            const status = err.name == "TokenExpiredError" ? 401 : 403;
-
-            return res.status(status).json({
-                error: err,
-            });
-        }
-
-        req.appId = decoded.appId;
-        req.address = decoded.address;
-        next();
-    });
-};
 
 //
 // /apiV1/auth/authorizePoS
@@ -306,22 +194,6 @@ const verifyTokenApp = (req: RequestCustom, res: Response, next: NextFunction) =
 //
 //app.post("/apiV1/auth/registerPoS", function (req: Request, res: Response) {});
 
-type DeviceResponse = {
-    password: string;
-    device: DeviceFromClient;
-};
-
-type DeviceFromClient = {
-    deviceId: string;
-    browser: string;
-    browserVersion: string;
-};
-
-type DeviceServerSide = {
-    ip?: string;
-    authorized?: boolean;
-};
-
 type registeredPosRecord = {
     deviceId: string;
     autorized: number; 
@@ -330,260 +202,10 @@ type registeredPosRecord = {
     browserVersion: string;
     ip: string;
 }
-//
-// /apiV1/auth/sigin
-// Signin into the server
-//
-// For this the client is sending the unique mobile Id and some devices characteristics.
-// The server is then able to identify the registered PoS and sends back a JWT to the PoS
-// In case the login is requested on a manager role, a password is provided in the object
-// When no device have been registered and the manager's password is valid (as it unlocks
-// the wallet), the device is automatically registered.
-// For the following devices, the manager registration will be required
-//
-// In the case, a regular login is attempted, while the wallet has not been provided to the
-// server to unlock the wallet, the ende point returns a 403
-//
-app.post("/apiV1/auth/signin", function (req: Request, res: Response) {
-    const response = req.body as DeviceResponse;
 
-    let { device, password } = response;
-    const verification: DeviceServerSide = {};
-    verification.ip = req.headers['x-forwarded-for'] as string || req.ip ;
-    logger.info("server.signin %s %s", device.deviceId, verification.ip);
-
-    // Check if a password has been provided -> the user is attempting to login as manager
-    if (password) {
-        let pass: string = password as string;
-
-        if (passHash == "") {
-            // The password has not been provided yet -> try to unlock the wallet
-            let jsonWallet = fs.readFileSync(config.walletFileName);
-
-            Wallet.fromEncryptedJson(jsonWallet.toString(), pass)
-                .then(function (data) {
-                    loadWallet(data, pass, app);
-                    verification.authorized = true;
-                    registerPoS({ ...device, ...verification }, pass, res);
-                })
-                .catch(function (data) {
-                    console.log(data);
-                    logger.info("server.signin.wrongCredentials");
-                    res.status(403).send({
-                        error: {
-                            name: "walletPassError",
-                            message: "Wrong credentials for the wallet password",
-                        },
-                    });
-                });
-        } else {
-            // The password has already been provided, the wallet is unlocked. Verify if the passwaord is Ok
-            if (passHash != utils.keccak256(utils.toUtf8Bytes(pass))) {
-                logger.info("server.signin.wrongCredentials");
-                res.status(403).send({
-                    error: {
-                        name: "walletPassError",
-                        message: "Wrong credentials for the wallet password",
-                    },
-                });
-            } else {
-                // The credentials are Ok -> register the device
-                logger.info("server.signin.registerPoS");
-                verification.authorized = true;
-                registerPoS(device, password, res);
-            }
-        }
-    } else {
-        if (passHash == "") {
-            // The wallet has not been loaded, the server is not ready and cannot accept PoS connections
-            logger.info("server.signin.walletNotLoaded");
-            res.status(403).json({
-                error: {
-                    name: "walletNotLoaded",
-                    message: "The server's wallet has not been loaded, manager's login required",
-                },
-            });
-        } else {
-            // The wallet is loaded, the server can accept connections. We verify that this PoS has been registered
-            logger.info("server.signin.registerPoS");
-            registerPoS(device, req.body.password, res);
-        }
-    }
-});
-
-function loadWallet(w: Wallet, pass: string, app: any) {
-    wallet = w.connect(app.locals.ethProvider);
-    logger.info("server.signin.loadedWallet");
-    passHash = utils.keccak256(utils.toUtf8Bytes(pass));
-    //console.log(w.mnemonic);
-
-    app.locals.metas.forEach(async (nft: any) => {
-        let balance = await app.locals.token.balanceOf(wallet.address, nft.tokenId);
-        nft.availableTokens = balance.toString();
-        if (balance.isZero()) nft.isLocked = true;
-    });
-}
-
-//
-// registerPoS, parameters: the device to be registered, the password if the user is a manager and the result object
-//
-// This function registers a new PoS in the database
-// If the PoS does not exists, it is created if a manager's password has been provided and in that case, it sends back a Jwt
-// If the PoS has already been registered and authorized, it simply sends back a token
-//
-function registerPoS(device: DeviceServerSide & DeviceFromClient, pass: string, res: any) {
-    let manager: boolean;
-
-    if (!device.authorized) device.authorized = false;
-    manager = typeof pass !== "undefined";
-
-//    const pos: any = registeredPoS.findOne({ deviceId: device.deviceId });
-    const pos: any = dbPos.findRegisteredPos(device.deviceId);
-    console.log(pos);
-    if (pos == null) {
-        if (!device.authorized) {
-            // The PoS has not been registered and no password has been provided -> reject
-            logger.info("server.signin.posNotAuthorized");
-            res.status(403).json({
-                error: {
-                    name: "posNotAuthorized",
-                    message: "The Point of Sale has not been authorized",
-                },
-            });
-            return;
-        } else {
-            // This is a new PoS connected with the manager's login -> register
-            logger.info("server.signin.newPoS %s", device);
-            device.authorized = true;
-            //registeredPoS.insert(device);
-            dbPos.insertNewPos(device);
-            const token = jwt.sign({ id: device.deviceId, manager: manager }, config.secret, { expiresIn: jwtExpiry });
-            res.status(200).send({ id: device.deviceId, accessToken: token });
-            return;
-        }
-    } else {
-        // The PoS has been registered
-        if (pos.authorized == 0) {
-            logger.info("server.signin.posNotAuthorized");
-            res.status(403).json({
-                error: {
-                    name: "posNotAuthorized",
-                    message: "The Point of Sale has not been authorized",
-                },
-            });
-            return;
-        } else {
-            // The PoS is authorized -> Ok
-            logger.info("server.signin.success %s", device);
-            pos.ip = device.ip; // Updating the client's ip address
-            //registeredPoS.update(pos);
-            dbPos.updateIpRegisteredPos(device.deviceId, device.ip as string);
-            const token = jwt.sign({ id: device.deviceId, manager: manager }, config.secret, { expiresIn: jwtExpiry });
-            res.status(200).send({ id: device.deviceId, accessToken: token });
-            return;
-        }
-    }
-}
-
-//
-// /apiV1/auth/appLogin
-// Companion app login into the server
-//
-// The companion app stores the customer's private key and sends a signed message for the login
-// This message contains the uuid associated with the app. This end point verifies the signature and checks that 
-// the associated ethereum address is not already associated with a different uuid. If no uuid is associated with that
-// address, the uuid is stored in the server's database
-//
-type AppLogin = {
-    signature: string;
-    message: AppLoginMessage;
-};
-type AppLoginMessage = {
-    appId: string;
-    address: string;
-    nonce: number;
-};
-
-app.post("/apiV1/auth/appLogin", async function (req: Request, res: Response) {
-    const login = req.body as AppLogin;
-    logger.info('server.loginApp %s', login.message.address);
-
-    //let app = appIds.findOne({address: login.message.address}); 
-    let app = dbPos.findAppId(login.message.address); 
-    //if (app == null) appIds.insert(login.message);
-    if (app == null) dbPos.insertNewAppId(login.message);
-    else {
-        if (app.appId != login.message.appId) {
-            logger.info('server.loginApp.alreadyRegistered');
-            return res.status(403).json({error: 'address already registered with device: ' + app.appId})
-        }
-        if (login.message.nonce <= app.nonce) {
-            logger.info('server.loginApp.messageAlreadyUsed');
-            return res.status(403).json({error: 'login message already received'})
-        }
-        
-        app.nonce = login.message.nonce;
-        //appIds.update(app);
-        dbPos.updateNonceAppId(login.message.appId, login.message.nonce);
-    }
-    
-    if(!isSignatureValid(login)) {
-        logger.info('server.loginApp.invalidSignature');
-        return res.status(403).json({error: 'invalid signature'})       
-    }
-    if(! await isAddressOwningToken(login.message.address)) return res.status(403).json({error: 'address is not an owner of a token'});
-
-    const token = jwt.sign({ id: login.message.appId, address: login.message.address }, config.secret, { expiresIn: jwtExpiry });
-    return  res.status(200).json({ appId: login.message.appId, accessToken: token });
-});
-
-//
-// /apiV1/auth/appLoginDrop
-// Drop a registration for a companion app
-//
-// The companion app logs into the system via 
-app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, async function (req: RequestCustom, res: Response) {
-    if (req.deviceId === undefined) return res.status(403).json({error: 'no appId provided in the token'});
-    if (req.address === undefined) return res.status(403).json({error: 'no address provided in the token'});
-    logger.info('server.appLoginDrop %s', req.deviceId);
-
-    //let app = appIds.findOne({address: req.address}); 
-    let app = dbPos.findAppId(req.address); 
-    if (app == null) return res.status(200).json({status: 'no app registered for this address'});
-    
-    //appIds.remove(app);
-    dbPos.removeAppId(app.appId);
-    return res.status(200).json({status: 'appId ' + req.deviceId + ' removed for address ' + req.address});
-});
-
-//
-// isAddressOwningToken
-// - address: the owner's address
-//
-// This function checks the Ethereum logs to find out whether the address is owning a token or not.
-async function isAddressOwningToken(address: string) {
-    let ret = await tokensOwnedByAddress(address || "", app.locals.token);
-    return ret.length != 0;
-}
-
-
-//
-// isSignatureValid
-// - login: AppLogin containing the information sent by the application
-//
-// This function verifies the signature received from the companion app
-//
-function isSignatureValid(login: AppLogin) {
-    const lg: AppLoginMessage = {
-        appId: login.message.appId,
-        address: login.message.address,
-        nonce: login.message.nonce
-    };
-    const message: string = JSON.stringify(lg);
-
-    const signerAddress = utils.verifyMessage(message, login.signature);
-    return (signerAddress == login.message.address);
-}
+app.post("/apiV1/auth/signin", signin);
+app.post("/apiV1/auth/appLogin", appLogin); 
+app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, appLoginDrop);
 
 app.get("/tokens", verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
@@ -615,24 +237,8 @@ app.get("/QRCode", function (req: Request, res: Response) {
 });
 
 
-app.get('/apiV1/information/video', verifyTokenApp, function(req: Request, res: Response) {
-    logger.info('server.playVideo %s', req.query.address);
-
-    //TODO select the video to be played from the customer's address
-
-    const filePath = path.join(__dirname, "public/sample-mp4-file.mp4");
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': 'video/mp4',
-    }
-    res.writeHead(200, head)
-    fs.createReadStream(filePath).pipe(res)
-  })
-
+app.get('/apiV1/information/video', verifyTokenApp, video);
 app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
-
 app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
 
 //
@@ -840,7 +446,7 @@ app.post('/apiV1/sale/createToken', verifyToken, async function(req :RequestCust
           return;
       }
   
-    let factory = new ContractFactory(app.locals.gvdNftDef.abi, app.locals.gvdNftDef.data.bytecode.object, wallet);
+    let factory = new ContractFactory(app.locals.gvdNftDef.abi, app.locals.gvdNftDef.data.bytecode.object, app.locals.wallet);
     let contract = await factory.deploy(req.query.uri);
     await contract.deployed();
     res.status(200).json({contractAddress: contract.address});
@@ -868,14 +474,14 @@ app.post("/apiV1/sale/transfer", verifyToken, async function (req: RequestCustom
     };
     saleEvents.insert(saleEvent);
 
-    let tokenWithSigner = app.locals.token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(app.locals.wallet);
     console.log(tokenWithSigner);
     console.log("token");
     console.log(app.locals.token);
     console.log("wallet");
-    console.log(wallet);
+    console.log(app.locals.wallet);
     tokenWithSigner
-        .safeTransferFrom(wallet.address, destinationAddr, tokenId, 1, [])
+        .safeTransferFrom(app.locals.wallet.address, destinationAddr, tokenId, 1, [])
         .then((transferResult: TransactionResponse) => {
             res.sendStatus(200);
             const saleEvent: SaleEventRecord = {
@@ -906,7 +512,7 @@ app.post("/apiV1/sale/transfer", verifyToken, async function (req: RequestCustom
                     transactionReceipt.transactionHash,
                 );
                 // Update the balance once the transfer has been performed
-                app.locals.token.balanceOf(wallet.address, tokenId).then((balance: any) => {
+                app.locals.token.balanceOf(app.locals.wallet.address, tokenId).then((balance: any) => {
                     const tk = app.locals.metasMap.get(tokenAddr + tokenId);
                     if (tk != null) {
                         tk.availableTokens = balance.toString();
@@ -987,7 +593,7 @@ app.post("/apiV1/sale/transferEth", verifyToken, async function (req: RequestCus
         status: NFT4ART_SALE_INITIATED
     };
 
-    let tokenWithSigner = app.locals.token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(app.locals.wallet);
     tokenWithSigner
         .saleRecord(tokenId, saleRecord)
         .then((transferResult: TransactionResponse) => {
@@ -1061,7 +667,7 @@ app.post("/apiV1/token/mintIpfsFolder", verifyTokenManager, async function (req:
     if (bigIntIds.findIndex(Object.is.bind(null, undefined)) != -1) return res.status(400).json({error: {name: 'invalidId', message: 'One of the Ids to mint is invalid'}});
     
     var amounts = resp.data.Objects[0].Links.map( (item: any) => item.amount === undefined ? constants.One : BigNumber.from(item.amount));
-    let tokenWithSigner = app.locals.token.connect(wallet);
+    let tokenWithSigner = app.locals.token.connect(app.locals.wallet);
     try {
         var tx = await tokenWithSigner.mintBatch(bigIntIds, amounts, [] );
         await tx.wait();
