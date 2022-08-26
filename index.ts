@@ -207,6 +207,11 @@ app.post("/apiV1/auth/signin", signin);
 app.post("/apiV1/auth/appLogin", appLogin); 
 app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, appLoginDrop);
 
+app.get('/apiV1/information/video', verifyTokenApp, video);
+app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
+app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
+app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
+
 app.get("/tokens", verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
 });
@@ -237,9 +242,6 @@ app.get("/QRCode", function (req: Request, res: Response) {
 });
 
 
-app.get('/apiV1/information/video', verifyTokenApp, video);
-app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
-app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
 
 //
 // /apiV1/priceInCrypto
@@ -675,7 +677,6 @@ app.post("/apiV1/token/mintIpfsFolder", verifyTokenManager, async function (req:
     } catch(e) { res.status(400).json({error: {name: 'errorMintingTokens', message: 'Error minting the tokens'}}); }
 });
 
-app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
 
 interface ExtWebSocket extends WebSocket {
     isAlive: boolean;
