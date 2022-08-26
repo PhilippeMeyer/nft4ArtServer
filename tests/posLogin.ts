@@ -11,7 +11,7 @@ type DeviceFromClient = {
     browserVersion: string;
 };
 //const server = 'http://localhost:8999';
-const server = 'https://enormous-substantial-cougar.glitch.me';
+const server = 'https://nft4artserver.glitch.me';
 const url = server + '/apiV1/auth/signin';
 
 const device: DeviceFromClient = { deviceId: "12345", browser: "Chrome", browserVersion: "101" };
@@ -27,7 +27,8 @@ try {
         body: JSON.stringify(resp)
     });
 
-    console.log(res1);
+    const ret1 = await res1.json();
+    console.log(ret1);
 }
 catch(e) {console.log(e);}
 
