@@ -5,6 +5,7 @@ build/**
 *.js
 ./tests/*.js
 ./services/*.js
+./endPoints/**.js
 nft4Art.json
 nft4art.db
 package-lock.json

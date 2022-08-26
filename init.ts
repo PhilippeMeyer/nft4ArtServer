@@ -26,14 +26,20 @@ import axios from "axios";
 //  app.locals.token            Proxy to the smart contract
 //  app.locals.metas            List of the Nfts loaded from the smart contract
 //  app.locals.metasMap         Same information but organised in a map
-//  exApp.locals.icons          Cache of the icons of the different tokens
-//  exApp.locals.images         Cache of the different images
+//  app.locals.icons            Cache of the icons of the different tokens
+//  app.locals.images           Cache of the different images
+//  app.locals.passHash         Contains the hash of the wallet's password
+//  app.locals.wallet           Refers to the server's wallet
+//
 
 async function init(exApp: any, config: any) {
     // Read the ABI of the GovernedNft contract
     let rawAbi = fs.readFileSync(config.gvdNftAbiFile);
     const gvdNftDef = JSON.parse(rawAbi.toString());
     exApp.locals.gvdNftDef = gvdNftDef;
+
+    exApp.locals.passHash = "";
+    exApp.locals.wallet = {};
 
     // Connect to Infura and connect to the token
     let token: Contract;
