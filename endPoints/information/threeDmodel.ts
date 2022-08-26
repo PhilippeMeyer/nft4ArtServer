@@ -5,6 +5,7 @@ import path from "path";
 import { app } from "../../app.js";
 import { logger } from "../../loggerConfiguration.js";
 import { RequestCustom } from "../../requestCustom.js";
+import { config } from "../../config.js"
 
 
 //
@@ -15,13 +16,16 @@ import { RequestCustom } from "../../requestCustom.js";
 //
 
 function threeDmodel(req: RequestCustom, res: Response) {
-    logger.info('server.tokensOwned %s', req.address);
-
+    logger.info('server.threeDmodel %s', req.address);
+/*
     const filePath = path.join(__dirname, "public/sample-mp4-file.mp4");
     const buff = fs.readFileSync(filePath);
     const buffB64 = buff.toString('base64');
 
     res.status(200).json({type: 'stl', data: buffB64});
+*/
+  res.type("model/gltf-binary");
+  res.status(200).sendFile(path.join(config.__dirname, "public/sphere.glb"));
 }
 
 export { threeDmodel };
