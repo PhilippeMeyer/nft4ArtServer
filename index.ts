@@ -67,6 +67,7 @@ var saleEvents: any;                        // Database collection of events (lo
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+config.__dirname = __dirname;
 
 // Initialize and configure the logger (winston)
 
@@ -169,6 +170,9 @@ app.use(cors());
 //app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(expressWinston.logger(logConf));
+app.set('views', path.join(config.__dirname, 'views'));
+app.set('view engine', 'ejs');
+
 
 waitFor(() => databaseInitialized).then(() =>
     server.listen(process.env.PORT || 8999, () => {
@@ -209,8 +213,10 @@ app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, appLoginDrop);
 
 app.get('/apiV1/information/video', verifyTokenApp, video);
 app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
-app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
+//app.get('/apiV1/information/3Dmodel', verifyTokenApp, threeDmodel);
+app.get('/apiV1/information/3Dmodel', threeDmodel);
 app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
+
 
 app.get("/tokens", verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
