@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { v4 as uuidv4 } from 'uuid';
+import { expect } from "chai";
 
 type DeviceResponse = {
     password: string;
@@ -20,33 +21,55 @@ const deviceId = uuidv4();
 const device: DeviceFromClient = { deviceId: deviceId, browser: "Chrome", browserVersion: "101" };
 const resp: DeviceResponse = { password: "12345678", device: device };
 
-try {
-    const res1 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(resp)
+describe('Testing logging in as manager', function() {
+    it('Logging in as a manager with the correct password', async function () {
+        
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(resp)
+        });
+    
+        expect(res.status).to.equal(200);
+        const ret = await res.json();
+        expect (ret.accessToken).not.to.be.undefined;
     });
 
-    const ret1 = await res1.json();
-    console.log(ret1);
+    it('Logging in as a manager with the wrong password', async function() {
+        resp.password = 'abc';
 
-    resp.password = 'abc';
-
-    const res2 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(resp)
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(resp)
+        });
+    
+        expect(res.status).to.equal(403);
+        const ret = await res.json();
+        expect (ret.accessToken).to.be.undefined;
     });
 
-    const ret2 = await res2.json();
-    console.log(ret2);
+    it('Logging in again as a manager with the correct password', async function () {
+        resp.password = "12345678";
 
-}
-catch(e) {console.log(e);}
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(resp)
+        });
+    
+        expect(res.status).to.equal(200);
+        const ret = await res.json();
+        expect (ret.accessToken).not.to.be.undefined
+    });
+});
 

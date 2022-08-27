@@ -1,5 +1,6 @@
 import { utils, Wallet } from "ethers";
 import fetch from 'node-fetch';
+import { expect } from "chai";
 
 const server = 'http://localhost:8999';
 const appId = 'test';
@@ -24,78 +25,96 @@ type AppLoginMessage = {
 
 const addr = await wallet.getAddress();
 const appLoginMessage: AppLoginMessage = { appId: appId, address: addr, nonce: Date.now()};
-console.log('message: ', JSON.stringify(appLoginMessage));
+//console.log('message: ', JSON.stringify(appLoginMessage));
 const signature = await wallet.signMessage(JSON.stringify(appLoginMessage));
-console.log('signature:', signature);
+//console.log('signature:', signature);
+let msg: AppLogin = {
+    message: appLoginMessage,
+    signature: signature
+};
 
-try {
-    let msg: AppLogin = {
-        message: appLoginMessage,
-        signature: signature
-    };
+describe('Testing logging in as a mobile app', function() {
 
-    const res1 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(msg)
-    }); 
+    it('Attempt to connect and register to the server' , async function() {
 
-    const ret1 = await res1.json();
-    console.log(ret1);
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(msg)
+        }); 
 
-    if(res1.status == 200) jwt = ret1.accessToken;
+        const ret = await res.json();
+        expect(res.status).to.equal(200);
+        expect (ret.accessToken).not.to.be.undefined;
 
-    const res2 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(msg)
-    }); 
+        if(res.status == 200) jwt = ret.accessToken;
+    });
 
-    const ret2 = await res2.json();
-    console.log(ret2);
+    it('Attempt to connect to the server with the same message' , async function() {
 
-    msg.message.nonce++;
-    msg.signature = await wallet.signMessage(JSON.stringify(msg.message));
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(msg)
+        }); 
 
-    const res3 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(msg)
-    }); 
+        const ret = await res.json();
+        expect(ret.error.name).to.equal('messageUsed');
+        expect(res.status).to.equal(403);
+    });
 
-    const ret3 = await res3.json();
-    console.log(ret3);
+    it('Reattempt to connect to the server incrementing the nonce' , async function() {
 
-    // Should not work as the address has been registered with test and not test2
-    msg.message.appId = 'test2';
-    msg.signature = await wallet.signMessage(JSON.stringify(msg.message));
+        msg.message.nonce++;
+        msg.signature = await wallet.signMessage(JSON.stringify(msg.message));
 
-    const res4 = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(msg)
-    }); 
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(msg)
+        }); 
 
-    const ret4 = await res4.json();
-    console.log(ret4);
+        const ret = await res.json();
+        expect(res.status).to.equal(200);
+        expect (ret.accessToken).not.to.be.undefined;
+    });
 
-    const jwtHeader = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'authorization': 'Bearer ' + jwt };
+    it('Attempt to connect to the server with another device' , async function() {
 
-    const res5 = await fetch(urlDrop, { method: 'POST', headers: jwtHeader, body: JSON.stringify(msg) }); 
+        // Should not work as the address has been registered with test and not test2
+        msg.message.appId = 'test2';
+        msg.signature = await wallet.signMessage(JSON.stringify(msg.message));
 
-    const ret5 = await res5.json();
-    console.log(ret5);
-}
-catch(e) {console.log(e);}
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(msg)
+        }); 
+
+        const ret = await res.json();
+        expect(ret.error.name).to.equal('addressRegistered');
+        expect(res.status).to.equal(403);
+    });
+
+    it('Drop the device registration' , async function() {
+        console.log(jwt);
+        const jwtHeader = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'authorization': 'Bearer ' + jwt };
+
+        const res = await fetch(urlDrop, { method: 'POST', headers: jwtHeader, body: JSON.stringify(msg) }); 
+        const ret = await res.json();
+
+        expect(res.status).to.equal(200);
+    });
+});
