@@ -25,7 +25,7 @@ import * as dbPos from '../../services/db.js';
 //
 
 type DeviceResponse = {
-    password: string;
+    password?: string;
     device: DeviceFromClient;
 };
 
@@ -74,7 +74,7 @@ function signin(req: Request, res: Response) {
                     });
                 });
         } else {
-            // The password has already been provided, the wallet is unlocked. Verify if the passwaord is Ok
+            // The password has already been provided, the wallet is unlocked. Verify if the password is Ok
             if (app.locals.passHash != utils.keccak256(utils.toUtf8Bytes(pass))) {
                 logger.info("server.signin.wrongCredentials");
                 res.status(403).send({
@@ -87,8 +87,8 @@ function signin(req: Request, res: Response) {
                 // The credentials are Ok -> register the device
                 logger.info("server.signin.registerPoS");
                 verification.authorized = true;
-                registerPoS(device, password, res);
-            }
+                registerPoS({ ...device, ...verification }, pass, res);
+        }
         }
     } else {
         if (app.locals.passHash == "") {
