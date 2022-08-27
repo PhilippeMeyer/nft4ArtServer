@@ -31,7 +31,7 @@ const verifyTokenApp = (req: RequestCustom, res: Response, next: NextFunction) =
             });
         }
 
-        req.appId = decoded.appId;
+        req.appId = decoded.id;
         req.address = decoded.address;
         next();
     });
