@@ -37,11 +37,11 @@ async function appLogin(req: Request, res: Response) {
     else {
         if (app.appId != login.message.appId) {
             logger.info('server.loginApp.alreadyRegistered');
-            return res.status(403).json({error: 'address already registered with device: ' + app.appId})
+            return res.status(403).json({error: { name: 'addressRegistered', message: 'address already registered with device: ' + app.appId}})
         }
         if (login.message.nonce <= app.nonce) {
             logger.info('server.loginApp.messageAlreadyUsed');
-            return res.status(403).json({error: 'login message already received'})
+            return res.status(403).json({error: { name: 'messageUsed', message: 'login message already received'}});
         }
         
         app.nonce = login.message.nonce;
@@ -50,9 +50,10 @@ async function appLogin(req: Request, res: Response) {
     
     if(!isSignatureValid(login)) {
         logger.info('server.loginApp.invalidSignature');
-        return res.status(403).json({error: 'invalid signature'})       
+        return res.status(403).json({error: { name: 'invalidSignature', message: 'invalid signature'}});       
     }
-    if(! await isAddressOwningToken(login.message.address)) return res.status(403).json({error: 'address is not an owner of a token'});
+
+    if(! await isAddressOwningToken(login.message.address)) return res.status(403).json({error: { name: 'noTokenOwner', message: 'address is not an owner of a token'}});
 
     const token = jwt.sign({ id: login.message.appId, address: login.message.address }, config.secret, { expiresIn: config.jwtExpiry });
     return  res.status(200).json({ appId: login.message.appId, accessToken: token });
@@ -66,15 +67,15 @@ async function appLogin(req: Request, res: Response) {
 // ethereum address. When the consumer changes device, he needs to drop the previously registered app
 //
 async function appLoginDrop(req: RequestCustom, res: Response) {
-    if (req.deviceId === undefined) return res.status(403).json({error: 'no appId provided in the token'});
-    if (req.address === undefined) return res.status(403).json({error: 'no address provided in the token'});
+    if (req.appId === undefined) return res.status(403).json({error: { name: 'noAppId', message: 'no appId provided in the token'}});
+    if (req.address === undefined) return res.status(403).json({error: { name: 'noAddress', message: 'no address provided in the token'}});
     logger.info('server.appLoginDrop %s', req.deviceId);
 
     let app = dbPos.findAppId(req.address); 
     if (app == null) return res.status(200).json({status: 'no app registered for this address'});
     
     dbPos.removeAppId(app.appId);
-    return res.status(200).json({status: 'appId ' + req.deviceId + ' removed for address ' + req.address});
+    return res.status(200).json({status: 'appId ' + req.appId + ' removed for address ' + req.address});
 }
 
 //
