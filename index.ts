@@ -31,6 +31,8 @@ import { verifyTokenApp } from "./endPoints/auth/verifyTokenApp.js";
 import { verifyToken } from "./endPoints/auth/verifyToken.js";
 import { verifyTokenManager } from "./endPoints/auth/verifyTokenManager.js";
 import { appLogin, appLoginDrop } from "./endPoints/auth/appLogin.js";
+import { priceInCrypto } from "./endPoints/price/priceInCrypto.js";
+import { priceUpdate, priceUpdates } from "./endPoints/price/priceUpdate.js";
 
 
 // TODO: Env var?
@@ -217,8 +219,10 @@ app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
 app.get('/apiV1/information/3Dmodel', threeDmodel);
 app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
 
+app.get('/apiV1/price/priceInCrypto', priceInCrypto);
 
-app.get("/tokens", verifyToken, (req: Request, res: Response) => {
+
+app.get(["/tokens", "/apiV1/tokens/list"], verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
 });
 
@@ -247,135 +251,8 @@ app.get("/QRCode", function (req: Request, res: Response) {
     res.status(200).sendFile(path.join(config.cache, config.addressToken + '.png'));
 });
 
-
-
-//
-// /apiV1/priceInCrypto
-// Get the price of a token in a given currency
-//
-// Parameters:  tokenId: the id of the token (concatenation of the token address and the tokenId)
-//              crypto : crypto currency in which the price is converted (eth or btc)  
-//
-// Returns:     tokenId: the id of the token (concatenation of the token address and the tokenId)
-//              crypto : crypto currency in which the price is converted (eth or btc)  
-//              price : the price converted in fiat currency
-//              priceFiat : the original price
-//              rate : the rate which has been used for the conversion
-//
-app.get('/apiV1/priceInCrypto', function (req :Request, res :Response) {
-	console.log('price request: ', req.query.tokenId, req.query.crypto);
-	if (typeof req.query.tokenId === 'undefined') {
-		res.status(400).json({error: {name: 'noTokenIdSpecified', message: 'The token Id is missing'}});
-		return;
-	}
-	if (typeof req.query.crypto === 'undefined') {
-		res.status(400).json({error: {name: 'noCryptoSpecified', message: 'The crypto is missing'}});
-		return;
-	}
-
-	//var token: any = tokens.findOne({id: req.query.tokenId});
-    var token: any = dbPos.findToken(req.query.tokenId as string);
-	if (token == null) {
-		res.status(404).json({error: {name: 'tokenNotFound', message: 'The specified token is not in the database'}});
-		return;
-	}
-  
-    Promise.all([
-        axios.get(config.priceFeedCHF),
-        axios.get(req.query.crypto == 'eth' ? config.priceFeedETH : config.priceFeedBTC)
-    ])
-    .then(response => {
-        let rate: number = response[1].data.data.rateUsd * response[0].data.data.rateUsd;
-        res.status(200).json({  tokenid: req.query.tokenId, 
-                                crypto: req.query.crypto, 
-                                price: token.price / rate,
-                                priceFiat: token.price,
-                                rate:  rate})
-    });
-});
-
-//
-// /apiV1/price/update
-// Update the price of a token
-//
-// This is an endpoint used when the manager updates the price of a token
-// The parameters are:
-// 	- the token identifier (which is the concatenation of the token's address and the token's id)
-//	- the price
-//
-app.put("/apiV1/price/update", verifyTokenManager, (req: Request, res: Response) => {
-    if (typeof req.query.tokenId === "undefined") {
-        res.status(400).json({
-            error: {
-                name: "noTokenIdSpecified",
-                message: "The token Id is missing",
-            },
-        });
-        return;
-    }
-    if (typeof req.query.price === "undefined") {
-        res.status(400).json({
-            error: { name: "noPriceSpecified", message: "The price is missing" },
-        });
-        return;
-    }
-
-    //const token: any = tokens.findOne({ id: req.query.tokenId });
-    var token: any = dbPos.findToken(req.query.tokenId as string);
-    if (token == null) {
-        res.status(404).json({
-            error: {
-                name: "tokenNotFound",
-                message: "The specified token is not in the database",
-            },
-        });
-        return;
-    }
-
-    //token.price = req.query.price;
-    //tokens.update(token);
-    dbPos.updatePriceToken(req.query.tokenId as string, parseFloat(req.query.price as string));
-    res.sendStatus(200);
-    sendPrice(token.id, token.price);
-});
-
-//
-// /apiV1/price/updates
-// Update the price of a list of tokens
-//
-// This is an endpoint used when the manager updates the token prices
-// The parameters are:
-// 	- a Json object containing the id and the price
-//
-app.put("/apiV1/price/updates", verifyTokenManager, function (req: Request, res: Response) {
-    var tokensUpdate = req.body;
-    console.log(tokensUpdate);
-    if (tokensUpdate.length == 0) {
-        res.sendStatus(400);
-        return;
-    }
-
-    tokensUpdate.forEach((item: any) => {
-        //var token: any = tokens.findOne({ id: item.id });
-        var token: any = dbPos.findToken(item.id as string);
-        if (token == null) {
-            res.status(404).json({
-                error: {
-                    name: "tokenNotFound",
-                    message: `The specified token ${item.tokenId} is not in the database`,
-                },
-            });
-            return;
-        }
-
-        //token.price = item.price;
-        //tokens.update(token);
-        dbPos.updatePriceToken(item.id as string, parseFloat(item.price as string));
-        sendPrice(token.id, token.price);
-    });
-
-    res.sendStatus(200);
-});
+app.put("/apiV1/price/update", verifyTokenManager, priceUpdate);
+app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
 //
 // /apiV1/auth/registeredPoS
@@ -693,9 +570,6 @@ interface ExtWebSocket extends WebSocket {
 function sendLock(id: string, isLocked: boolean) {
     sendMessage(JSON.stringify(new LockMessage(id, isLocked)));
 }
-function sendPrice(id: string, price: number) {
-    sendMessage(JSON.stringify(new PriceMessage(id, price)));
-}
 
 function sendMessage(msg: string) {
     setTimeout(() => {
@@ -706,15 +580,12 @@ function sendMessage(msg: string) {
     }, 1000);
 }
 
+export { sendMessage };
+
 export class LockMessage {
     public typeMsg: string = "lock";
 
     constructor(public id: string, public isLocked: boolean = true) {}
-}
-export class PriceMessage {
-    public typeMsg: string = "price";
-
-    constructor(public id: string, public price: number) {}
 }
 
 wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
