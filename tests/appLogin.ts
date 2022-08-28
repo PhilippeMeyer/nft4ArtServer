@@ -1,9 +1,12 @@
 import { utils, Wallet } from "ethers";
 import fetch from 'node-fetch';
 import { expect } from "chai";
+import { v4 as uuidv4 } from 'uuid';
+
 
 const server = 'http://localhost:8999';
-const appId = 'test';
+const appId = uuidv4();
+
 //const server = 'https://nft4artpos.glitch.me';
 //const appId = 'fa70a269-784b-4c81-ad0c-06e63beec5d9';
 
@@ -109,12 +112,36 @@ describe('Testing logging in as a mobile app', function() {
     });
 
     it('Drop the device registration' , async function() {
-        console.log(jwt);
         const jwtHeader = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'authorization': 'Bearer ' + jwt };
 
         const res = await fetch(urlDrop, { method: 'POST', headers: jwtHeader, body: JSON.stringify(msg) }); 
         const ret = await res.json();
 
         expect(res.status).to.equal(200);
+    });
+
+    it('Testing with a random address', async function() {
+        
+        const wallet: Wallet = Wallet.createRandom();
+        const addr = await wallet.getAddress();
+        const appLoginMessage: AppLoginMessage = { appId: appId, address: addr, nonce: Date.now()};
+        const signature = await wallet.signMessage(JSON.stringify(appLoginMessage));
+        let msg: AppLogin = {
+            message: appLoginMessage,
+            signature: signature
+        };
+
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(msg)
+        }); 
+
+        const ret = await res.json();
+        expect(res.status).to.equal(403);
+        expect(ret.error.name).to.equal('noTokenOwner');
     });
 });
