@@ -17,6 +17,7 @@ const server = 'http://localhost:8999';
 const urlLogin = server + '/apiV1/auth/signin';
 const urlTokens = server + '/apiV1/tokens/list';
 let urlSetPrice = server + '/apiV1/price/update';
+let urlGetPrice = server + '/apiV1/price/priceInCrypto';
 const price = 100;
 
 var jwt: string = "";
@@ -127,6 +128,41 @@ describe("Setting a token's price", function() {
         urlSetPrice += '?price=100';
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(400);
+    });
+
+    it('Retrieving a price in BTC', async function () {
+
+        const res = await fetch(urlLogin, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(resp)
+        });
+
+        expect(res.status).to.equal(200);
+        const ret = await res.json();
+        expect (ret.accessToken).not.to.be.undefined;
+
+        if(res.status == 200) jwt = ret.accessToken;
+        const jwtHeader = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'authorization': 'Bearer ' + jwt };
+
+        const res2 = await fetch(urlTokens, { method: 'GET', headers: jwtHeader } );
+        const ret2 = await res2.json();
+        expect(res2.status).to.equal(200);
+        expect(ret2).to.have.lengthOf.above(0);
+        if (ret2.length == 0) return;
+
+        urlSetPrice += '?price=' + price.toString() + '&tokenId=' + ret2[0].id;
+        const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
+        expect(res3.status).to.equal(200);
+
+        urlGetPrice += '?tokenId=' + ret2[0].id + '&crypto=btc';
+        const res4 = await fetch(urlGetPrice, { method: 'GET', headers: jwtHeader } );
+        const ret4 = await res4.json();
+        expect(ret4.tokenId).to.be.equal(ret2[0].id);
+        expect(ret4.crypto).to.be.equal('btc');
+        expect(ret4).to.have.property('price');
+        expect(ret4).to.have.property('priceFiat');
+        expect(ret4).to.have.property('rate');
     });
 
     //TODO Test if the message has been received
