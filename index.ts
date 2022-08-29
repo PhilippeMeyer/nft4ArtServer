@@ -223,6 +223,8 @@ app.get('/apiV1/information/3Dmodel', threeDmodel);
 app.get("/apiV1/information/generateWallets", verifyTokenManager, generateWallets);
 
 app.get('/apiV1/price/priceInCrypto', priceInCrypto);
+app.put("/apiV1/price/update", verifyTokenManager, priceUpdate);
+app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
 
 app.get(["/tokens", "/apiV1/tokens/list"], verifyToken, (req: Request, res: Response) => {
@@ -254,8 +256,6 @@ app.get("/QRCode", function (req: Request, res: Response) {
     res.status(200).sendFile(path.join(config.cache, config.addressToken + '.png'));
 });
 
-app.put("/apiV1/price/update", verifyTokenManager, priceUpdate);
-app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
 //
 // /apiV1/auth/registeredPoS
