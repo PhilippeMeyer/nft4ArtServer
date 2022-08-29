@@ -142,15 +142,15 @@ cleanup(exitHandler);
 // Server Init:
 //
 // For security reasons, the server does not store the wallet's password.
-// Therefore, no action can be performed before loading the wallet with /loadWAllet where the wallet owner enters interactively the password
+// Therefore, no action can be performed before loading the wallet with /apiV1/auth/signin where the wallet owner submits the password
 // This password is used to unlock the wallet and the hash of this password is kept in memory so that further admin functions can be checked
 // against this password. If a wrong password is given to unlock the wallet, this generates an error an the password hash is empty blocking
 // any further operation.
 //
 // Client Connections:
 //
-// Each Point of Sale has to be registered first. The registration is performed on the PoS side by genereting a key pair and sending to the server
-// the mobile unique Id encrypted with the priavte key together with the public key. The server stores in lowDb the mobile Id and its associated
+// Each Point of Sale has to be registered first. The registration is performed on the PoS side by generating a key pair and sending to the server
+// the mobile unique Id encrypted with the private key together with the public key. The server stores in sqlite the mobile Id and its associated
 // public key. The server's admin is then invited to validate this registration.
 //
 // Once a PoS registered, the connection is performed sending a signature of the mobile unique Id when the biometrics on the PoS have been validated

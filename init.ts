@@ -11,8 +11,8 @@ import axios from "axios";
 //
 // Server initialization
 //
-// This function retrieves the tokens' information on Ethereum via Infura and caches the images in alocal directory
-// If the images have not been cached, it rerieves those from Ipfs
+// This function retrieves the tokens' information on Ethereum via Infura and caches the images in a local directory
+// If the images have not been cached, it retrieves those from Ipfs
 //
 // This function fills:
 // 	- the meta global variable with the tokens' data
