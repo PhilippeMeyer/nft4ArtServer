@@ -45,7 +45,7 @@ function priceInCrypto(req :Request, res :Response) {
     ])
     .then(response => {
         let rate: number = response[1].data.data.rateUsd * response[0].data.data.rateUsd;
-        res.status(200).json({  tokenid: req.query.tokenId, 
+        res.status(200).json({  tokenId: req.query.tokenId, 
                                 crypto: req.query.crypto, 
                                 price: token.price / rate,
                                 priceFiat: token.price,

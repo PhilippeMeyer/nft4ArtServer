@@ -16,10 +16,11 @@ const server = 'http://localhost:8999';
 //const server = 'https://nft4artserver.glitch.me';
 const urlLogin = server + '/apiV1/auth/signin';
 const urlTokens = server + '/apiV1/tokens/list';
-let urlSetPrice = server + '/apiV1/price/update';
-let urlGetPrice = server + '/apiV1/price/priceInCrypto';
+const urlSetPriceRoot = server + '/apiV1/price/update';
+const urlGetPriceRoot = server + '/apiV1/price/priceInCrypto';
+let urlSetPrice: string;
+let urlGetPrice: string;
 const price = 100;
-
 var jwt: string = "";
 
 const deviceId = uuidv4();
@@ -49,7 +50,7 @@ describe("Setting a token's price", function() {
         expect(ret2).to.have.lengthOf.above(0);
         if (ret2.length == 0) return;
 
-        urlSetPrice += '?price=' + price.toString() + '&tokenId=' + ret2[0].id; 
+        urlSetPrice = urlSetPriceRoot + '?price=' + price.toString() + '&tokenId=' + ret2[0].id; 
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(200);
 
@@ -73,7 +74,7 @@ describe("Setting a token's price", function() {
         if(res.status == 200) jwt = ret.accessToken;
         const jwtHeader = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'authorization': 'Bearer ' + jwt };
 
-        urlSetPrice += '?price=' + price.toString() + '&tokenId=123';
+        urlSetPrice = urlGetPriceRoot + '?price=' + price.toString() + '&tokenId=123';
         const res2 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res2.status).to.equal(404);
     });
@@ -99,7 +100,7 @@ describe("Setting a token's price", function() {
         expect(ret2).to.have.lengthOf.above(0);
         if (ret2.length == 0) return;
 
-        urlSetPrice += '?tokenId=' + ret2[0].id;
+        urlSetPrice = urlSetPriceRoot +  '?tokenId=' + ret2[0].id;
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(400);
     });
@@ -125,7 +126,7 @@ describe("Setting a token's price", function() {
         expect(ret2).to.have.lengthOf.above(0);
         if (ret2.length == 0) return;
 
-        urlSetPrice += '?price=100';
+        urlSetPrice = urlSetPriceRoot + '?price=100';
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(400);
     });
@@ -151,11 +152,11 @@ describe("Setting a token's price", function() {
         expect(ret2).to.have.lengthOf.above(0);
         if (ret2.length == 0) return;
 
-        urlSetPrice += '?price=' + price.toString() + '&tokenId=' + ret2[0].id;
+        urlSetPrice = urlSetPriceRoot + '?price=' + price.toString() + '&tokenId=' + ret2[0].id;
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(200);
 
-        urlGetPrice += '?tokenId=' + ret2[0].id + '&crypto=btc';
+        urlGetPrice = urlGetPriceRoot + '?tokenId=' + ret2[0].id + '&crypto=btc';
         const res4 = await fetch(urlGetPrice, { method: 'GET', headers: jwtHeader } );
         const ret4 = await res4.json();
         expect(ret4.tokenId).to.be.equal(ret2[0].id);
@@ -186,11 +187,11 @@ describe("Setting a token's price", function() {
         expect(ret2).to.have.lengthOf.above(0);
         if (ret2.length == 0) return;
 
-        urlSetPrice += '?price=' + price.toString() + '&tokenId=' + ret2[0].id;
+        urlSetPrice = urlSetPriceRoot + '?price=' + price.toString() + '&tokenId=' + ret2[0].id;
         const res3 = await fetch(urlSetPrice, { method: 'PUT', headers: jwtHeader } );
         expect(res3.status).to.equal(200);
 
-        urlGetPrice += '?tokenId=' + ret2[0].id + '&crypto=eth';
+        urlGetPrice = urlGetPriceRoot + '?tokenId=' + ret2[0].id + '&crypto=eth';
         const res4 = await fetch(urlGetPrice, { method: 'GET', headers: jwtHeader } );
         const ret4 = await res4.json();
         expect(ret4.tokenId).to.be.equal(ret2[0].id);
