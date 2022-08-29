@@ -33,6 +33,7 @@ import { verifyTokenManager } from "./endPoints/auth/verifyTokenManager.js";
 import { appLogin, appLoginDrop } from "./endPoints/auth/appLogin.js";
 import { priceInCrypto } from "./endPoints/price/priceInCrypto.js";
 import { priceUpdate, priceUpdates } from "./endPoints/price/priceUpdate.js";
+import { authorizePoS } from "./endPoints/auth/authorizePoS.js";
 
 
 // TODO: Env var?
@@ -212,6 +213,8 @@ type registeredPosRecord = {
 app.post("/apiV1/auth/signin", signin);
 app.post("/apiV1/auth/appLogin", appLogin); 
 app.post("/apiV1/auth/appLoginDrop", verifyTokenApp, appLoginDrop);
+app.put("/apiV1/auth/authorizePoS", verifyTokenManager, authorizePoS);
+
 
 app.get('/apiV1/information/video', verifyTokenApp, video);
 app.get('/apiV1/information/tokensOwned', verifyTokenApp, tokensOwned);
@@ -280,45 +283,6 @@ app.get("/apiV1/log/allEvents", verifyTokenManager, function (req: Request, res:
     res.status(200).json(results);
 });
 
-//
-// /apiV1/auth/authorizePoS, parameter: PoS, the name of the PoS, authorized: true or false
-//
-// This end point sends back the registered PoS
-//
-app.put("/apiV1/auth/authorizePoS", verifyTokenManager, function (req: Request, res: Response) {
-    if (typeof req.query.PoS === "undefined") {
-        res.sendStatus(400).json({
-            error: {
-                name: "noPoSSpecified",
-                message: "The Point of Sale is missing",
-            },
-        });
-        return;
-    }
-    if (typeof req.query.authorized === "undefined") {
-        res.sendStatus(400).json({
-            error: {
-                name: "noAuthorizationSpecified",
-                message: "The Point of Sale authorization is missing",
-            },
-        });
-        return;
-    }
-
-    var pos = registeredPoS.findOne({ deviceId: req.query.PoS });
-    if (pos == null) {
-        res.sendStatus(400).json({
-            error: {
-                name: "nonExistingPoS",
-                message: "The Point of Sale does not exist",
-            },
-        });
-        return;
-    }
-    pos.authorized = req.query.authorized == "true" ? true : false;
-    registeredPoS.update(pos);
-    res.sendStatus(200);
-});
 
 //
 // /apiV1/sale/createToken, parameters: the token's Uri

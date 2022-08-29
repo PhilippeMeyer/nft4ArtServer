@@ -40,7 +40,11 @@ const insertNewPos = function(posObj: any) {
     const result = stmt.run(params);
 }
 
-const updateIpRegisteredPos = function(id: string, ip: string) {
+const updateIpRegisteredPos = function(id: string, authorized: boolean) {
+    db.prepare('UPDATE registeredPoS SET authorized=? WHERE deviceId=?').run([authorized ? 1 : 0, id]);
+}
+
+const updateAuthorizedRegisteredPos = function(id: string, ip: string) {
     db.prepare('UPDATE registeredPoS SET ip=? WHERE deviceId=?').run([ip, id]);
 }
 
@@ -83,6 +87,6 @@ const removeAppId = function(appId: string) {
 }
 
 export {    initDb, closeDb, 
-            findRegisteredPos, insertNewPos, updateIpRegisteredPos,
+            findRegisteredPos, insertNewPos, updateIpRegisteredPos, updateAuthorizedRegisteredPos,
             findToken, insertNewToken, updatePriceToken, updateLockToken,
             findAppId, insertNewAppId, updateNonceAppId, removeAppId };
