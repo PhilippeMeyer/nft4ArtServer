@@ -40,11 +40,11 @@ const insertNewPos = function(posObj: any) {
     const result = stmt.run(params);
 }
 
-const updateIpRegisteredPos = function(id: string, authorized: boolean) {
+const updateAuthorizedRegisteredPos = function(id: string, authorized: string) {
     db.prepare('UPDATE registeredPoS SET authorized=? WHERE deviceId=?').run([authorized ? 1 : 0, id]);
 }
 
-const updateAuthorizedRegisteredPos = function(id: string, ip: string) {
+const updateIpRegisteredPos = function(id: string, ip: string) {
     db.prepare('UPDATE registeredPoS SET ip=? WHERE deviceId=?').run([ip, id]);
 }
 
