@@ -22,7 +22,7 @@ import { config } from "../../config.js";
 //
 function priceInCrypto(req :Request, res :Response) {
 	
-    logger.info('server.price.priceInCrypto: %s, %s', req.query.tokenId, req.query.crypto);
+    logger.info('server.price.priceInCrypto: %s, crypto: %s', req.query.tokenId, req.query.crypto);
 	
     if (typeof req.query.tokenId === 'undefined') {
 		res.status(400).json({error: {name: 'noTokenIdSpecified', message: 'The token Id is missing'}});
