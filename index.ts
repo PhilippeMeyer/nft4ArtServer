@@ -229,7 +229,7 @@ app.get('/apiV1/price/priceInCrypto', priceInCrypto);
 app.put("/apiV1/price/update", verifyTokenManager, priceUpdate);
 app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
-app.post('/apiV1/token/mintTokenFromFiles', upload.array('files'), mintTokenFromFiles); 
+app.post('/apiV1/token/mintTokenFromFiles', upload.any(), mintTokenFromFiles); 
 app.get(["/tokens", "/apiV1/tokens/list"], verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
 });
