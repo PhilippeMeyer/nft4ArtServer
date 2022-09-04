@@ -2,7 +2,7 @@ node_modules/**
 cache/**
 build/**
 uploads/**
-./.env*
+.env*
 *.js
 ./tests/**.js
 ./services/**.js
@@ -10,3 +10,5 @@ uploads/**
 nft4Art.json
 nft4art.db
 package-lock.json
+*.keys
+cids-created.txt

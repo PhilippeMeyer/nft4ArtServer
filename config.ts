@@ -18,5 +18,6 @@ config.creationScript = process.env.APP_DB_CREATION_SCRIPT;
 config.iconUrl = process.env.APP_WEBSITE + "/icon?id=";
 config.imgUrl = process.env.APP_WEBSITE + "/image?id=";
 config.jwtExpiry = process.env.APP_JWT_EXPIRY;
+config.nftSorageToken = process.env.APP_NFTSTORAGE_TOKEN;
 
 export { config };

@@ -35,7 +35,7 @@ import { appLogin, appLoginDrop } from "./endPoints/auth/appLogin.js";
 import { priceInCrypto } from "./endPoints/price/priceInCrypto.js";
 import { priceUpdate, priceUpdates } from "./endPoints/price/priceUpdate.js";
 import { authorizePoS } from "./endPoints/auth/authorizePoS.js";
-import { mintTokenFromFiles } from "./endPoints/token/mintTokenFromFiles.js";
+import { batchMintTokenFromFiles, batchMintStart, batchMintFinalize } from "./endPoints/token/mintTokenFromFiles.js";
 
 
 // TODO: Env var?
@@ -57,7 +57,9 @@ const TOKEN_COLLECTION_NAME = "tokens";
 const SALES_EVENTS_COLLECTION_NAME = "saleEvents";
 const APP_ID_COLLECTION_NAME = "appIds";
 
-const upload = multer({dest: 'uploads/'});
+const storage = multer.memoryStorage()
+const upload = multer({ storage: storage })
+//const upload = multer({dest: 'uploads/'});
 
 // Global variables
 
@@ -229,7 +231,10 @@ app.get('/apiV1/price/priceInCrypto', priceInCrypto);
 app.put("/apiV1/price/update", verifyTokenManager, priceUpdate);
 app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
-app.post('/apiV1/token/mintTokenFromFiles', upload.any(), mintTokenFromFiles); 
+app.post('/apiV1/token/batchMintStart', batchMintStart); 
+app.post('/apiV1/token/batchMintTokenFromFiles', upload.any(), batchMintTokenFromFiles); 
+app.post('/apiV1/token/batchMintFinalize', batchMintFinalize); 
+
 app.get(["/tokens", "/apiV1/tokens/list"], verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);
 });
