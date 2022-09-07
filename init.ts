@@ -6,6 +6,7 @@ import { receivedEthCallback } from "./services/receivedEthCallback.js"
 import path from "path";
 import * as dbPos from './services/db.js';
 import axios from "axios";
+import { app } from "./app.js";
 
 
 //
@@ -30,6 +31,7 @@ import axios from "axios";
 //  app.locals.images           Cache of the different images
 //  app.locals.passHash         Contains the hash of the wallet's password
 //  app.locals.wallet           Refers to the server's wallet
+//  app.locals.ipfsFolder       Contains the default URI from the smartcontract
 //
 
 async function init(exApp: any, config: any) {
@@ -94,7 +96,8 @@ async function init(exApp: any, config: any) {
     for (i = 0; i < ids.length; i++) {
         const id = ids[i];
         strToken = await token.uri(id);
-        str = strToken.replace('ipfs:', 'https:').replace('/{id}', '.ipfs.dweb.link/' + id);
+        app.locals.ipfsFolder = strToken;
+        str = strToken.replace('ipfs:', 'https:').replace('/{id}', '.ipfs.dweb.link/' + id); //TODO parametrize the ipfs gateway
 
         if (errTimeout == 2) break; // If we face a timeout we retry twice
 
