@@ -3,11 +3,12 @@ cache/**
 build/**
 uploads/**
 .env*
+./.env*
 *.js
 ./tests/**.js
 ./services/**.js
 ./endPoints/**.js
-nft4Art.json
+nft4Art.json*
 nft4art.db
 package-lock.json
 *.keys
