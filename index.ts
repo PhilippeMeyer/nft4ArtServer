@@ -21,6 +21,7 @@ import { RequestCustom } from "./requestCustom.js"
 import { logConf, logger } from "./loggerConfiguration.js";
 
 import * as dbPos from './services/db.js';
+import { createSmartContract } from './services/createSmartContract.js';
 import { config } from "./config.js";
 
 import { generateWallets } from "./endPoints/information/generateWallets.js";
@@ -302,10 +303,7 @@ app.post('/apiV1/sale/createToken', verifyToken, async function(req :RequestCust
           res.sendStatus(400).json({error: {name: 'noURISpecified', message: 'The Uri for the contract is missing'}});
           return;
       }
-  
-    let factory = new ContractFactory(app.locals.gvdNftDef.abi, app.locals.gvdNftDef.data.bytecode.object, app.locals.wallet);
-    let contract = await factory.deploy(req.query.uri);
-    await contract.deployed();
+    let contract:any = createSmartContract();
     res.status(200).json({contractAddress: contract.address});
     
   });

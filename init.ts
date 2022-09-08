@@ -2,12 +2,14 @@ import fs from "fs";
 import QRCode from "qrcode";
 import { logger } from "./loggerConfiguration.js";
 import { BigNumber, constants, Contract, ContractFactory, errors, providers, utils, Wallet } from "ethers";
-import { receivedEthCallback } from "./services/receivedEthCallback.js"
-import path from "path";
-import * as dbPos from './services/db.js';
 import axios from "axios";
-import { app } from "./app.js";
+import path from "path";
 
+import { receivedEthCallback } from "./services/receivedEthCallback.js"
+import * as dbPos from './services/db.js';
+import { app } from "./app.js";
+import { createSmartContract } from "./services/createSmartContract.js";
+import { config } from "./config.js"
 
 //
 // Server initialization
@@ -34,7 +36,7 @@ import { app } from "./app.js";
 //  app.locals.ipfsFolder       Contains the default URI from the smartcontract
 //
 
-async function init(exApp: any, config: any) {
+async function init(exApp: any, config: any) {  
     // Read the ABI of the GovernedNft contract
     let rawAbi = fs.readFileSync(config.gvdNftAbiFile);
     const gvdNftDef = JSON.parse(rawAbi.toString());
@@ -42,13 +44,26 @@ async function init(exApp: any, config: any) {
 
     exApp.locals.passHash = "";
     exApp.locals.wallet = {};
-
-    // Connect to Infura and connect to the token
-    let token: Contract;
-
     exApp.locals.ethProvider = await new providers.InfuraProvider(config.network, config.infuraKey);
-    token = await new Contract(config.addressToken, gvdNftDef.abi, exApp.locals.ethProvider);
+
+
+    let tokenList = dbPos.findAllSmartContracts();
+    if (tokenList.length == 0) return
+
+    initToken(exApp, tokenList[0].addressEth);
+}
+
+async function initToken(exApp: any, addressToken: string) {
+//        token = await createSmartContract();
+//        dbPos.insertNewSmartContract(token.address);
+
+    let token: Contract;
+    
+    console.log(addressToken);
+    token = await new Contract(addressToken, exApp.locals.gvdNftDef.abi, exApp.locals.ethProvider);
+
     exApp.locals.token = token;
+
     var receivedEth = token.filters.ReceivedEth();
     token.on(receivedEth, receivedEthCallback)
     logger.info("server.init %s", token.address);
@@ -66,8 +81,8 @@ async function init(exApp: any, config: any) {
 
     if (!fs.existsSync(config.cacheFolder)) fs.mkdirSync(config.cacheFolder);
 
-    const QRaddr: string = path.join(config.cacheFolder, config.addressToken + '.png');
-    if(!fs.existsSync(QRaddr)) await QRCode.toFile(QRaddr, config.addressToken);
+    const QRaddr: string = path.join(config.cacheFolder, addressToken + '.png');
+    if(!fs.existsSync(QRaddr)) await QRCode.toFile(QRaddr, addressToken);
     
     let i: number = 0;
     let str: string, strToken: string;
@@ -103,15 +118,15 @@ async function init(exApp: any, config: any) {
 
         try {
             //data = tokens.findOne({ id: config.addressToken + id }); // Store information in the database if not existing
-            var dataFromDb = dbPos.findToken(config.addressToken + id );
+            var dataFromDb = dbPos.findToken(addressToken + id );
             if (dataFromDb == null) {
                 logger.info("server.init.loadTokens.fromIpfs %s", str);
                 let resp = await axios.get(str); // The data is not in cache, we retrieve the JSON from Ipfs
                 data = resp.data;
-                data.id = config.addressToken + id;
+                data.id = addressToken + id;
                 data.tokenIdStr = id?.toString();
                 data.tokenId = id;
-                data.addr = config.addressToken;
+                data.addr = addressToken;
                 data.isLocked = false;
                 data.price = 0;
                 //tokens.insert(data);

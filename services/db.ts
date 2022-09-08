@@ -94,7 +94,7 @@ const insertNewSmartContract = function(address: string) {
 }
 
 const findAllSmartContracts = function() {
-    return db.prepare('SELECT * FROM smartContracts').all([]);
+    return db.prepare('SELECT addressEth FROM smartContracts').all([]);
 }
 
 export {    initDb, closeDb, 

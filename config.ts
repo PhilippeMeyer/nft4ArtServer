@@ -6,7 +6,6 @@ config.walletFileName = process.env.APP_WALLET_FILE;
 config.database = process.env.APP_DB_FILE;
 config.infuraKey = process.env.APP_INFURA_KEY;
 config.network = process.env.APP_NETWORK;
-config.addressToken = process.env.APP_TOKEN_ADDR;
 config.cacheFolder = process.env.APP_CACHE_FOLDER;
 config.priceFeedETH = process.env.APP_PRICE_FEED_ETH;
 config.priceFeedBTC = process.env.APP_PRICE_FEED_BTC;
