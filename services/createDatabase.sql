@@ -6,6 +6,7 @@ create table registeredPoS (
     browserVersion text,
     ip text,
     createdOn datetime default current_timestamp);
+
 create table tokens (
     tokenId text primary key,
     id text,
@@ -13,11 +14,13 @@ create table tokens (
     price real,
     jsonData text,
     createdOn datetime default current_timestamp);
+
 create table appIds (
     appId text primary key,
     addressEth text,
     nonce integer
     createdOn datetime default current_timestamp);
+
 create table salesEvents (
     typeMsg text,
     id text,
@@ -27,5 +30,9 @@ create table salesEvents (
     isTransferred integer,
     isFinalized integer,
     txId text,
-    error text
-);
+    error text);
+
+create table smartContracts (
+    id integer primary key,
+    addressEth text);
+
