@@ -76,6 +76,7 @@ const insertNewAppId = function(appIdRecord: any) {
     const stmt = db.prepare('INSERT INTO appIds(appId, addressEth, nonce) VALUES (?, ?, ?)');
     const params = [appId, address, nonce];
     const result = stmt.run(params);
+
 }
 
 const updateNonceAppId = function(appId: string, nonce: number) {
@@ -86,7 +87,18 @@ const removeAppId = function(appId: string) {
     db.prepare('DELETE FROM appIds WHERE appId=?').run([appId]);
 }
 
+const insertNewSmartContract = function(address: string) {
+    const stmt = db.prepare('INSERT INTO smartContracts(addressEth) VALUES (?)');
+    const params = [address];
+    const result = stmt.run(params);
+}
+
+const findAllSmartContracts = function() {
+    return db.prepare('SELECT * FROM smartContracts').all([]);
+}
+
 export {    initDb, closeDb, 
             findRegisteredPos, insertNewPos, updateIpRegisteredPos, updateAuthorizedRegisteredPos,
             findToken, insertNewToken, updatePriceToken, updateLockToken,
-            findAppId, insertNewAppId, updateNonceAppId, removeAppId };
+            findAppId, insertNewAppId, updateNonceAppId, removeAppId,
+            insertNewSmartContract, findAllSmartContracts };
