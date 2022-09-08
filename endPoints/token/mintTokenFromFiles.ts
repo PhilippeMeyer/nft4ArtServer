@@ -47,7 +47,7 @@ async function batchMintTokenFromFiles(req: Request, res: Response) {
     console.log(req.files);
     console.log(req.body);
 
-    // Find among the fileds a field name image_raw which should point to the file containing the image
+    // Find among the fileds a field named image_raw which should point to the file containing the image
     if (req.body.image_raw === undefined) {
         logger.info('server.batchMintTokenFromFiles.noLabelToImage');
         res.status(400).json({error: {name: 'noLabelToImage', message: 'No label to image has been provided'}});
@@ -89,7 +89,17 @@ async function batchMintTokenFromFiles(req: Request, res: Response) {
 }
 
 async function batchMintFinalize(req: Request, res: Response) {
-    console.log('Finalize:', app.locals.batchMintFolder);
+    console.log(req.body);
+
+    if(req.query.collections !== undefined) {
+        let colFilename = app.locals.batchMintFolder + '/' + 'collections.json';
+        if(fs.existsSync(colFilename)) {
+            const data = fs.readFileSync(colFilename);
+            const collection = JSON.parse(data.toString());
+            collection.push(req.query.collections);
+            fs.writeFileSync(colFilename, JSON.stringify(collection));
+        }
+    }
 
     const client = new NFTStorage({ token: config.nftSorageToken });
     const files = filesFromPath(app.locals.batchMintFolder, { pathPrefix: path.resolve(app.locals.batchMintFolder), hidden: false });
