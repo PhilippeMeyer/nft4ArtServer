@@ -44,7 +44,7 @@ async function mintSpheres() {
     let res: any;
     res = await fetch(urlMintStart, {method: 'POST'})
     console.log('init:', res.status);
-    /*
+
     for (key in json) {
         let frontStream:any, backStream:any;
         var formData = new FormData();
@@ -58,39 +58,20 @@ async function mintSpheres() {
             formData.append('image_back', backStream);
         }
         formData.append('tokenId', key);
-        formData.append('description', 'Shard #' + key.substring(1,3));
+        formData.append('description', 'Shard #' + key.substring(2,4));
         formData.append('author', 'Thomas Julier');
         formData.append('image_raw', json[key].image_raw);
-        formData.append('name', 'Sphere #' + key.substring(0,2) + ' explosion simulation - shard #' + key.substring(1,3));
+        formData.append('name', 'Sphere #' + key.substring(0,2) + ' explosion simulation - shard #' + key.substring(2,4));
     
         res = await fetch(urlMint, {method: 'POST', body: formData});
         console.log('creation ', key, ' status:', res.status);
     }
 
-    res = await fetch(urlMintFinalize, {method: 'POST'});
+    var formData = new FormData();
+    console.log(JSON.stringify(collection));
+    formData.append('collections', JSON.stringify(collection));
+    res = await fetch(urlMintFinalize, {method: 'POST', body: formData});
     console.log(res.status);
-*/
-/*
-    res = await chai.request(server)
-    .post(urlMintStart);
-    expect(res).to.have.status(200);
-
-    res = await chai.request(server)
-    .post(urlMint)
-    .type('form')
-    .attach('image_front', image, image)
-    .attach('test', model, model)
-    .field('description', 'Sweet spot')
-    .field('image_raw', 'image_front')
-    .field('author', 'Creative Commons');
-    console.log(res);
-    
-    expect(res).to.have.status(200);
-
-    res =  await chai.request(server)
-    .post(urlMintFinalize);
-    expect(res).to.have.status(200);
-*/
 }
 
 mintSpheres();

@@ -6,6 +6,8 @@ import sharp from 'sharp';
 import { NFTStorage, File, Blob } from 'nft.storage';
 import { filesFromPath } from 'files-from-path'
 import axios from "axios";
+import { BigNumber, constants, Contract, ContractFactory, errors, providers, utils, Wallet } from "ethers";
+
 
 import { app } from "../../app.js";
 import { config } from "../../config.js";
@@ -42,10 +44,30 @@ function batchMintStart(req: Request, res: Response) {
     res.sendStatus(200);
 }
 
+//
+// batchMintTokenFromFiles
+//
+// Transfer a token to be minted
+//
+// Parameters: formdata containing:
+//  - the files associated to the token
+//  - properties:
+//      - image_raw: name of the file containing the image
+//      - numTokens: number of tokens to mint. default is 1
+//      - tokenId: tokenId of the token, if not provided, it will be incremented
+//      - description: decription of the token
+//      - author: token's author
+//      - name: token's name
+//
+// The files are stored on ipfs and their correponding cid inserted in the json describing the token
+// All the provided properties are copied into the json file which saved into the temp folder
+//
+
 async function batchMintTokenFromFiles(req: Request, res: Response) {
-    console.log('Folder:', app.locals.batchMintFolder);
-    console.log(req.files);
-    console.log(req.body);
+    let tokenId:string;
+    let numTokens:string;
+
+    logger.info('server.mintFromFiles.createFolder: %s', app.locals.batchMintFolder);
 
     // Find among the fileds a field named image_raw which should point to the file containing the image
     if (req.body.image_raw === undefined) {
@@ -63,40 +85,53 @@ async function batchMintTokenFromFiles(req: Request, res: Response) {
 		return;
     }
 
+    numTokens = (req.body.numTokens === undefined) ? '1' : req.body.numTokens;
+
     const client = new NFTStorage({ token: config.nftSorageToken });
     var metadata: any = {};
 
     for (const file of files) {
         var cid = await client.storeBlob(new Blob([file.buffer]));
-        console.log(cid);
+        logger.info('server.mintFromFiles.createIpfsFile %s', cid);
         metadata[file.fieldname] = "ipfs://" + cid;
     };
 
-    console.log('resize');
     const vignette = await sharp(image_raw.buffer).resize({width:350}).jpeg().toBuffer();
     var cid = await client.storeBlob(new Blob([vignette]));
-    console.log('vignette:', cid);
+    logger.info('server.mintFromFiles.createIpfsVignette %s', cid);
     metadata.image = "ipfs://" + cid;  
 
     let key;
     for (key in req.body)  metadata[key] = req.body[key];
     
-    console.log(metadata);
-    console.log(path.join(app.locals.batchMintFolder, app.locals.batchMintTokenId.toString() + ".json"));
-    fs.writeFileSync(path.join(app.locals.batchMintFolder, app.locals.batchMintTokenId.toString() + ".json"), JSON.stringify(metadata));
+    if(req.body.tokenId === undefined) {
+        tokenId = app.locals.batchMintTokenId.toString();
+        app.locals.batchMintTokenId++;
+    }
+    else 
+        tokenId = req.body.tokenId;
+    
+    const tid = parseInt(tokenId); 
+    fs.writeFileSync(path.join(app.locals.batchMintFolder, tid.toString() + ".json"), JSON.stringify(metadata));
 
+    const token:Contract = app.locals.token;
+    const txResp = await token.mint(tokenId, numTokens, []);
+    const txReceipt = await txResp.wait();
+    
     res.sendStatus(200);
 }
 
 async function batchMintFinalize(req: Request, res: Response) {
-    console.log(req.body);
+    let key;
+    let newCol:any = {};
 
-    if(req.query.collections !== undefined) {
+    if(req.body.collections !== undefined) {
         let colFilename = app.locals.batchMintFolder + '/' + 'collections.json';
         if(fs.existsSync(colFilename)) {
             const data = fs.readFileSync(colFilename);
             const collection = JSON.parse(data.toString());
-            collection.push(req.query.collections);
+            newCol = JSON.parse(req.body.collections);
+            for (key in newCol)  collection[key] = newCol[key];
             fs.writeFileSync(colFilename, JSON.stringify(collection));
         }
     }
@@ -104,6 +139,14 @@ async function batchMintFinalize(req: Request, res: Response) {
     const client = new NFTStorage({ token: config.nftSorageToken });
     const files = filesFromPath(app.locals.batchMintFolder, { pathPrefix: path.resolve(app.locals.batchMintFolder), hidden: false });
     const cid = await client.storeDirectory(files);
+    app.locals.ipfsFolder = cid;
+
+    const token:Contract = app.locals.token;
+    const txResp = await token.setDefaultURI('ipfs://' + cid + '/{id}.json');
+    const txReceipt = await txResp.wait();
+    logger.info('server.mintFromFiles.uriInserted %s', cid);
+
+    res.sendStatus(200);
 }
 
 //

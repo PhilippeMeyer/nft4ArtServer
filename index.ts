@@ -234,7 +234,7 @@ app.put("/apiV1/price/updates", verifyTokenManager, priceUpdates);
 
 app.post('/apiV1/token/batchMintStart', batchMintStart); 
 app.post('/apiV1/token/batchMintTokenFromFiles', upload.any(), batchMintTokenFromFiles); 
-app.post('/apiV1/token/batchMintFinalize', batchMintFinalize); 
+app.post('/apiV1/token/batchMintFinalize', upload.any(), batchMintFinalize); 
 
 app.get(["/tokens", "/apiV1/tokens/list"], verifyToken, (req: Request, res: Response) => {
     res.status(200).json(app.locals.metas);

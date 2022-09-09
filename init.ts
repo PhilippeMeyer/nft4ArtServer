@@ -48,20 +48,19 @@ async function init(exApp: any, config: any) {
 
 
     let tokenList = dbPos.findAllSmartContracts();
-    if (tokenList.length == 0) return
-
-    initToken(exApp, tokenList[0].addressEth);
-}
-
-async function initToken(exApp: any, addressToken: string) {
-//        token = await createSmartContract();
-//        dbPos.insertNewSmartContract(token.address);
+    if (tokenList.length == 0) {
+        logger.info('server.init.noSmartContractDefined');
+        return;
+    }
 
     let token: Contract;
     
-    console.log(addressToken);
-    token = await new Contract(addressToken, exApp.locals.gvdNftDef.abi, exApp.locals.ethProvider);
+    token = await new Contract(tokenList[0].addressEth, exApp.locals.gvdNftDef.abi, exApp.locals.ethProvider);
+    loadToken(token, exApp);
+}
 
+async function loadToken(token: Contract, exApp:any ) {
+    logger.info('server.init.loadToken');
     exApp.locals.token = token;
 
     var receivedEth = token.filters.ReceivedEth();
@@ -81,8 +80,8 @@ async function initToken(exApp: any, addressToken: string) {
 
     if (!fs.existsSync(config.cacheFolder)) fs.mkdirSync(config.cacheFolder);
 
-    const QRaddr: string = path.join(config.cacheFolder, addressToken + '.png');
-    if(!fs.existsSync(QRaddr)) await QRCode.toFile(QRaddr, addressToken);
+    const QRaddr: string = path.join(config.cacheFolder, token.address + '.png');
+    if(!fs.existsSync(QRaddr)) await QRCode.toFile(QRaddr, token.address);
     
     let i: number = 0;
     let str: string, strToken: string;
@@ -117,16 +116,15 @@ async function initToken(exApp: any, addressToken: string) {
         if (errTimeout == 2) break; // If we face a timeout we retry twice
 
         try {
-            //data = tokens.findOne({ id: config.addressToken + id }); // Store information in the database if not existing
-            var dataFromDb = dbPos.findToken(addressToken + id );
+            var dataFromDb = dbPos.findToken(token.address + id );
             if (dataFromDb == null) {
                 logger.info("server.init.loadTokens.fromIpfs %s", str);
                 let resp = await axios.get(str); // The data is not in cache, we retrieve the JSON from Ipfs
                 data = resp.data;
-                data.id = addressToken + id;
+                data.id = token.address + id;
                 data.tokenIdStr = id?.toString();
                 data.tokenId = id;
-                data.addr = addressToken;
+                data.addr = token.address;
                 data.isLocked = false;
                 data.price = 0;
                 //tokens.insert(data);
@@ -202,14 +200,15 @@ async function initToken(exApp: any, addressToken: string) {
     //
     const getImages = Promise.all(
         metas.map(async (meta: any) => {
-            let cid = config.cacheFolder + meta.image_raw.replace("ipfs://", "");
+            const img = meta.image_raw;
+            let cid = config.cacheFolder + meta[img].replace("ipfs://", "");
             try {
                 if (fs.existsSync(cid)) {
                     logger.info("server.init.loadImages.cache %s", cid);
                     buf = Buffer.from(fs.readFileSync(cid, { encoding: "binary" }), "binary");
                 } else {
                     logger.info("server.init.loadImages.ipfs %s", cid);
-                    let image = meta.image_raw.replace("ipfs", "https").concat(".ipfs.dweb.link");
+                    let image = meta[img].replace("ipfs", "https").concat(".ipfs.dweb.link");
                     const resp = await axios.get(image, { responseType: "arraybuffer" });
                     buf = Buffer.from(resp.data, "binary");
                     fs.writeFileSync(cid, buf, { flag: "w", encoding: "binary" });
@@ -225,6 +224,7 @@ async function initToken(exApp: any, addressToken: string) {
     );
 
     await Promise.all([getIcons, getImages]);
+    logger.info('server.init.loadTerminated');
 }
 
-export { init };
+export { init, loadToken };

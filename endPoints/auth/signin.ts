@@ -7,7 +7,8 @@ import { config } from "../../config.js";
 import { logger } from "../../loggerConfiguration.js";
 import { app } from "../../app.js";
 import * as dbPos from '../../services/db.js';
-
+import { createSmartContract } from "../../services/createSmartContract.js";
+import { loadToken } from "../../init.js"
 
 //
 // /apiV1/auth/sigin
@@ -108,11 +109,26 @@ function signin(req: Request, res: Response) {
     }
 }
 
-function loadWallet(w: Wallet, pass: string, app: any) {
+//
+// loadWallet
+// Loads and connects a wallet
+//
+// Loads a wallet and stores the hash of password in the app.locals global variable
+// If no token has been loaded, it will create a new smart contract
+//
+async function loadWallet(w: Wallet, pass: string, app: any) {
     app.locals.wallet = w.connect(app.locals.ethProvider);
     logger.info("server.signin.loadedWallet");
     app.locals.passHash = utils.keccak256(utils.toUtf8Bytes(pass));
 
+    if(app.locals.token === undefined) {
+        logger.info('server.signing.loadWallet.createSmartContract');
+        let token = await createSmartContract();
+        dbPos.insertNewSmartContract(token.address);
+        loadToken(token, app);
+    }
+
+    app.locals.token = app.locals.token.connect(app.locals.wallet);
     app.locals.metas.forEach(async (nft: any) => {
         let balance = await app.locals.token.balanceOf(app.locals.wallet.address, nft.tokenId);
         nft.availableTokens = balance.toString();
