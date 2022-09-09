@@ -7,7 +7,8 @@
     "scripts": {
         "start": "tsc && node index.js",
         "test": "mocha ./test/*.js",
-        "testSignin": "mocha ./test/posLoginManager.js"
+        "testSignin": "mocha ./test/posLoginManager.js",
+        "testTokenList": "mocha ./test/tokenList.js"
     },
     "repository": {
         "type": "git",
